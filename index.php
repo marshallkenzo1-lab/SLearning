@@ -6,6 +6,6 @@
     <title>Document</title>
 </head>
 <body>
-    <h1>HAi Bang</h1>
+    <h1>Hai banbgbang</h1>
 </body>
 </html>
