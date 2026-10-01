@@ -1,1114 +1,1449 @@
 <?php
+// SLearning - SKAJU Learning | Dashboard Murid
 session_start();
 
-/* =========================================================
-   CEK LOGIN
-   ========================================================= */
-if (!isset($_SESSION['login'])) {
-    header("Location: murid.php");
-    exit;
-}
+// Jika nanti sudah ada sistem login, bisa aktifkan:
+// if (!isset($_SESSION['login'])) {
+//     header("Location: login.php");
+//     exit;
+// }
 
-/* =========================================================
-   AMBIL DATA DARI SESSION
-   Menyesuaikan beberapa kemungkinan nama session
-   ========================================================= */
-$nama = $_SESSION['nama'] ?? $_SESSION['username'] ?? 'Murid';
-$nis = $_SESSION['NIS'] ?? $_SESSION['nis'] ?? '-';
-$kelas = $_SESSION['kelas'] ?? $_SESSION['Kelas'] ?? '-';
-$username = $_SESSION['username'] ?? '-';
-
-/* =========================================================
-   DATA SEMENTARA
-   Nanti bisa diganti dengan data dari database
-   ========================================================= */
-$total_tugas = 5;
-$sudah_kumpul = 3;
-$belum_kumpul = 2;
-$total_quiz = 3;
+$nama_murid = $_SESSION['nama'] ?? 'Andhini';
+$nis = $_SESSION['nis'] ?? 'NIS 20260001';
 ?>
 
 <!DOCTYPE html>
+
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Beranda Murid - E-Tugas SKAJU</title>
+<title>Dashboard Murid — SLearning</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="icon" type="image/png" href="assets/img/logo-smkn7.png">
 
 <style>
 
-/* =========================================================
-   RESET
-   ========================================================= */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
+:root{
+    --bg:#ffffff;
+    --bg-soft:#f7f7f8;
+    --dark:#0a0a0b;
+    --surface:#141416;
+    --surface-2:#1c1c1f;
+
+    --yellow:#ffc107;
+    --yellow-hover:#ffb300;
+    --yellow-soft:#fff6d6;
+
+    --text:#0a0a0b;
+    --muted:#6b7280;
+    --muted-dark:#a1a1aa;
+
+    --border:#e7e7ea;
+
+    --radius:16px;
+    --radius-lg:22px;
+
+    --max:1200px;
+
+    --shadow:0 16px 40px rgba(0,0,0,.08);
+
+    --font-h:'Poppins',sans-serif;
+    --font-b:'Open Sans',sans-serif;
 }
 
-body {
-    font-family: Arial, Helvetica, sans-serif;
-    background: #f6f7fb;
-    color: #252525;
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
 }
 
-/* =========================================================
-   SIDEBAR
-   ========================================================= */
-.sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-
-    width: 250px;
-    height: 100vh;
-
-    background: #ffffff;
-    border-right: 1px solid #e5e5e5;
-
-    padding: 25px 18px;
-
-    display: flex;
-    flex-direction: column;
-
-    z-index: 100;
+html{
+    scroll-behavior:smooth;
 }
 
-.logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-
-    padding: 5px 10px 30px;
+body{
+    font-family:var(--font-b);
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
 }
 
-.logo-icon {
-    width: 42px;
-    height: 42px;
-
-    background: #f2c94c;
-    border-radius: 12px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    font-size: 21px;
+a{
+    text-decoration:none;
+    color:inherit;
 }
 
-.logo-text h2 {
-    font-size: 18px;
-    color: #222;
+button{
+    font-family:inherit;
 }
 
-.logo-text p {
-    font-size: 11px;
-    color: #888;
-    margin-top: 3px;
+.container{
+    max-width:var(--max);
+    margin:auto;
+    padding:0 24px;
 }
 
-/* MENU */
+/* ================= NAVBAR ================= */
 
-.menu-title {
-    font-size: 11px;
-    color: #999;
-    text-transform: uppercase;
-
-    margin: 5px 12px 10px;
+.navbar{
+    position:sticky;
+    top:0;
+    z-index:50;
+    background:rgba(255,255,255,.94);
+    backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    box-shadow:0 8px 30px rgba(0,0,0,.07);
 }
 
-.menu {
-    list-style: none;
+.nav-inner{
+    max-width:var(--max);
+    margin:auto;
+    padding:14px 24px;
+    display:flex;
+    align-items:center;
+    gap:25px;
 }
 
-.menu li {
-    margin-bottom: 6px;
+.brand{
+    display:flex;
+    align-items:center;
+    gap:12px;
 }
 
-.menu a {
-    display: flex;
-    align-items: center;
-    gap: 13px;
-
-    padding: 12px 14px;
-
-    text-decoration: none;
-    color: #666;
-
-    border-radius: 10px;
-
-    font-size: 14px;
-
-    transition: 0.2s;
+.brand img{
+    width:44px;
+    height:44px;
+    object-fit:contain;
+    background:#fff;
+    border-radius:12px;
+    padding:4px;
+    border:1px solid var(--border);
 }
 
-.menu a:hover {
-    background: #fff8dc;
-    color: #222;
+.brand-text strong{
+    font-family:var(--font-h);
+    font-size:17px;
+    display:block;
 }
 
-.menu a.active {
-    background: #f2c94c;
-    color: #222;
-    font-weight: bold;
+.brand-text span{
+    font-size:11px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:.04em;
 }
 
-.menu-icon {
-    width: 20px;
-    text-align: center;
+.nav-links{
+    margin-left:auto;
+    display:flex;
+    gap:5px;
 }
 
-/* LOGOUT */
-
-.sidebar-bottom {
-    margin-top: auto;
+.nav-links a{
+    font-size:14px;
+    font-weight:600;
+    color:#4b5563;
+    padding:10px 13px;
+    border-radius:10px;
 }
 
-.logout {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-
-    padding: 12px 14px;
-
-    color: #d9534f;
-    text-decoration: none;
-
-    font-size: 14px;
-
-    border-radius: 10px;
+.nav-links a:hover,
+.nav-links a.active{
+    background:var(--yellow-soft);
+    color:var(--text);
 }
 
-.logout:hover {
-    background: #fff0f0;
+.profile{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding-left:14px;
+    border-left:1px solid var(--border);
 }
 
-/* =========================================================
-   MAIN
-   ========================================================= */
-
-.main {
-    margin-left: 250px;
-    min-height: 100vh;
+.avatar{
+    width:40px;
+    height:40px;
+    border-radius:50%;
+    background:var(--dark);
+    color:var(--yellow);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:var(--font-h);
+    font-weight:800;
 }
 
-/* =========================================================
-   TOPBAR
-   ========================================================= */
-
-.topbar {
-    height: 75px;
-
-    background: #ffffff;
-
-    border-bottom: 1px solid #e7e7e7;
-
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-
-    padding: 0 35px;
+.profile-info{
+    line-height:1.2;
 }
 
-.page-title h1 {
-    font-size: 22px;
-    color: #222;
+.profile-info strong{
+    display:block;
+    font-size:13px;
 }
 
-.page-title p {
-    font-size: 12px;
-    color: #999;
-    margin-top: 4px;
+.profile-info span{
+    color:var(--muted);
+    font-size:11px;
 }
 
-.profile-mini {
-    display: flex;
-    align-items: center;
-    gap: 11px;
+/* ================= HERO ================= */
+
+.dashboard{
+    min-height:calc(100vh - 73px);
+    background:
+        radial-gradient(
+            700px 350px at 85% 0%,
+            rgba(255,193,7,.20),
+            transparent
+        ),
+        var(--bg);
 }
 
-.avatar {
-    width: 39px;
-    height: 39px;
-
-    border-radius: 50%;
-
-    background: #f2c94c;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    font-weight: bold;
-    color: #333;
+.dashboard::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    background-image:
+        linear-gradient(#eeeeef 1px,transparent 1px),
+        linear-gradient(90deg,#eeeeef 1px,transparent 1px);
+    background-size:44px 44px;
+    mask-image:radial-gradient(
+        700px 500px at 50% 0%,
+        black,
+        transparent
+    );
+    z-index:0;
 }
 
-.profile-mini div:last-child {
-    line-height: 1.3;
+.dashboard-content{
+    position:relative;
+    z-index:1;
+    padding:42px 0 70px;
 }
 
-.profile-mini strong {
-    display: block;
-    font-size: 13px;
+/* ================= WELCOME ================= */
+
+.welcome{
+    background:var(--dark);
+    color:white;
+    border-radius:24px;
+    padding:34px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:25px;
+    position:relative;
+    overflow:hidden;
+    margin-bottom:24px;
 }
 
-.profile-mini span {
-    font-size: 11px;
-    color: #999;
+.welcome::after{
+    content:"";
+    position:absolute;
+    width:330px;
+    height:330px;
+    right:-100px;
+    top:-140px;
+    background:radial-gradient(
+        circle,
+        rgba(255,193,7,.38),
+        transparent 70%
+    );
 }
 
-/* =========================================================
-   CONTENT
-   ========================================================= */
-
-.content {
-    padding: 32px 35px;
+.welcome-text{
+    position:relative;
+    z-index:2;
 }
 
-/* WELCOME */
-
-.welcome {
-    background: #ffffff;
-
-    border-radius: 18px;
-
-    padding: 28px 30px;
-
-    margin-bottom: 25px;
-
-    border: 1px solid #e8e8e8;
-
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+.welcome small{
+    color:var(--yellow);
+    font-weight:700;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
 }
 
-.welcome-text h2 {
-    font-size: 25px;
-    margin-bottom: 8px;
+.welcome h1{
+    font-family:var(--font-h);
+    font-size:clamp(25px,4vw,38px);
+    margin:6px 0 8px;
 }
 
-.welcome-text p {
-    color: #777;
-    font-size: 14px;
+.welcome p{
+    color:#b9b9bf;
+    font-size:14px;
 }
 
-.welcome-badge {
-    width: 80px;
-    height: 80px;
-
-    background: #fff8dc;
-
-    border-radius: 50%;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    font-size: 37px;
+.welcome-button{
+    position:relative;
+    z-index:2;
 }
 
-/* =========================================================
-   STATISTIC CARD
-   ========================================================= */
-
-.stats {
-    display: grid;
-
-    grid-template-columns: repeat(3, 1fr);
-
-    gap: 18px;
-
-    margin-bottom: 25px;
+.btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    min-height:44px;
+    padding:11px 18px;
+    border-radius:11px;
+    border:1px solid transparent;
+    font-family:var(--font-h);
+    font-weight:600;
+    font-size:13px;
+    cursor:pointer;
+    transition:.2s;
 }
 
-.stat-card {
-    background: #ffffff;
-
-    border: 1px solid #e8e8e8;
-
-    border-radius: 15px;
-
-    padding: 20px;
-
-    display: flex;
-    align-items: center;
-    gap: 15px;
+.btn-yellow{
+    background:var(--yellow);
+    color:#171300;
 }
 
-.stat-icon {
-    width: 48px;
-    height: 48px;
-
-    border-radius: 12px;
-
-    background: #fff8dc;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    font-size: 22px;
+.btn-yellow:hover{
+    background:var(--yellow-hover);
+    transform:translateY(-2px);
+    box-shadow:0 8px 22px rgba(255,193,7,.3);
 }
 
-.stat-card h3 {
-    font-size: 22px;
-    margin-bottom: 3px;
+.btn-dark{
+    background:var(--dark);
+    color:white;
 }
 
-.stat-card p {
-    font-size: 12px;
-    color: #888;
+.btn-outline{
+    background:white;
+    border-color:var(--border);
+    color:var(--text);
 }
 
-/* =========================================================
-   GRID CONTENT
-   ========================================================= */
+/* ================= STAT ================= */
 
-.dashboard-grid {
-    display: grid;
-
-    grid-template-columns: 1.5fr 1fr;
-
-    gap: 20px;
+.stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:16px;
+    margin-bottom:35px;
 }
 
-/* CARD */
-
-.card {
-    background: #ffffff;
-
-    border: 1px solid #e8e8e8;
-
-    border-radius: 16px;
-
-    padding: 23px;
+.stat-card{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:20px;
+    display:flex;
+    align-items:center;
+    gap:15px;
+    transition:.2s;
 }
 
-.card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-
-    margin-bottom: 20px;
+.stat-card:hover{
+    transform:translateY(-3px);
+    box-shadow:var(--shadow);
 }
 
-.card-header h3 {
-    font-size: 17px;
+.stat-icon{
+    width:46px;
+    height:46px;
+    border-radius:13px;
+    background:var(--yellow-soft);
+    color:#8a6500;
+    display:flex;
+    align-items:center;
+    justify-content:center;
 }
 
-.card-header a {
-    text-decoration: none;
-
-    font-size: 12px;
-
-    color: #b28b00;
+.stat-number{
+    font-family:var(--font-h);
+    font-size:24px;
+    font-weight:800;
+    line-height:1;
 }
 
-/* TASK */
-
-.task {
-    border: 1px solid #eeeeee;
-
-    border-radius: 12px;
-
-    padding: 15px;
-
-    margin-bottom: 12px;
-
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: center;
+.stat-label{
+    color:var(--muted);
+    font-size:12px;
+    margin-top:4px;
 }
 
-.task:last-child {
-    margin-bottom: 0;
+/* ================= SECTION HEADER ================= */
+
+.section-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:end;
+    gap:15px;
+    margin-bottom:16px;
 }
 
-.task h4 {
-    font-size: 14px;
-    margin-bottom: 5px;
+.section-head h2{
+    font-family:var(--font-h);
+    font-size:22px;
 }
 
-.task p {
-    font-size: 11px;
-    color: #999;
+.section-head p{
+    color:var(--muted);
+    font-size:13px;
 }
 
-.status {
-    padding: 6px 10px;
+/* ================= TASK ================= */
 
-    border-radius: 20px;
-
-    font-size: 10px;
-
-    font-weight: bold;
+.main-grid{
+    display:grid;
+    grid-template-columns:1.45fr .75fr;
+    gap:22px;
+    margin-bottom:32px;
 }
 
-.status.done {
-    background: #e8f7ed;
-    color: #238b45;
+.task-list{
+    display:grid;
+    gap:12px;
 }
 
-.status.pending {
-    background: #fff4d5;
-    color: #a87a00;
+.task-card{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:19px;
+    display:flex;
+    align-items:center;
+    gap:15px;
+    transition:.2s;
 }
 
-/* =========================================================
-   PROFILE CARD
-   ========================================================= */
-
-.profile-card {
-    margin-bottom: 20px;
+.task-card:hover{
+    transform:translateY(-3px);
+    box-shadow:var(--shadow);
 }
 
-.profile-info {
-    display: flex;
-
-    align-items: center;
-
-    gap: 15px;
-
-    margin-bottom: 20px;
+.task-icon{
+    width:48px;
+    height:48px;
+    border-radius:13px;
+    background:var(--yellow-soft);
+    color:#7a5b00;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-shrink:0;
 }
 
-.profile-avatar {
-    width: 58px;
-    height: 58px;
-
-    background: #f2c94c;
-
-    border-radius: 50%;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    font-size: 20px;
-
-    font-weight: bold;
+.task-content{
+    flex:1;
 }
 
-.profile-info h3 {
-    font-size: 15px;
+.task-content h3{
+    font-family:var(--font-h);
+    font-size:14px;
+    margin-bottom:3px;
 }
 
-.profile-info p {
-    font-size: 11px;
-
-    color: #999;
-
-    margin-top: 4px;
+.task-content p{
+    color:var(--muted);
+    font-size:12px;
 }
 
-.info-row {
-    display: flex;
-
-    justify-content: space-between;
-
-    padding: 11px 0;
-
-    border-bottom: 1px solid #eeeeee;
-
-    font-size: 12px;
+.task-status{
+    font-size:11px;
+    font-weight:700;
+    padding:6px 11px;
+    border-radius:999px;
+    white-space:nowrap;
 }
 
-.info-row:last-child {
-    border-bottom: none;
+.status-wait{
+    background:var(--yellow-soft);
+    color:#8a6500;
 }
 
-.info-row span:first-child {
-    color: #999;
+.status-done{
+    background:#e7f7ee;
+    color:#15803d;
 }
 
-.info-row span:last-child {
-    font-weight: bold;
+.status-late{
+    background:#feecec;
+    color:#dc2626;
 }
 
-/* =========================================================
-   QUIZ CARD
-   ========================================================= */
+/* ================= QUICK ================= */
 
-.quiz-card {
-    background: #222;
-
-    color: white;
-
-    border-radius: 16px;
-
-    padding: 23px;
+.quick-card{
+    background:var(--dark);
+    color:white;
+    border-radius:var(--radius);
+    padding:24px;
 }
 
-.quiz-card h3 {
-    font-size: 17px;
-
-    margin-bottom: 7px;
+.quick-card h3{
+    font-family:var(--font-h);
+    font-size:18px;
+    margin-bottom:6px;
 }
 
-.quiz-card p {
-    font-size: 12px;
-
-    color: #bbb;
-
-    line-height: 1.5;
-
-    margin-bottom: 18px;
+.quick-card > p{
+    color:#a1a1aa;
+    font-size:12px;
+    margin-bottom:18px;
 }
 
-.quiz-button {
-    display: inline-block;
-
-    background: #f2c94c;
-
-    color: #222;
-
-    text-decoration: none;
-
-    padding: 10px 15px;
-
-    border-radius: 9px;
-
-    font-size: 12px;
-
-    font-weight: bold;
+.quick-menu{
+    display:grid;
+    gap:9px;
 }
 
-/* =========================================================
-   RESPONSIVE
-   ========================================================= */
+.quick-menu a{
+    background:#1c1c1f;
+    border:1px solid #2a2a2e;
+    padding:13px;
+    border-radius:12px;
+    display:flex;
+    align-items:center;
+    gap:11px;
+    font-size:13px;
+    transition:.2s;
+}
 
-@media (max-width: 900px) {
+.quick-menu a:hover{
+    background:#242427;
+    border-color:#414146;
+    transform:translateX(3px);
+}
 
-    .sidebar {
-        width: 210px;
+.quick-menu svg{
+    color:var(--yellow);
+}
+
+/* ================= QUIZ ================= */
+
+.quiz-section{
+    margin-top:10px;
+}
+
+.quiz-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:16px;
+}
+
+.quiz-card{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:21px;
+    transition:.2s;
+}
+
+.quiz-card:hover{
+    transform:translateY(-4px);
+    box-shadow:var(--shadow);
+}
+
+.quiz-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:16px;
+}
+
+.quiz-label{
+    font-size:10px;
+    font-weight:800;
+    background:var(--dark);
+    color:var(--yellow);
+    padding:6px 9px;
+    border-radius:7px;
+}
+
+.quiz-time{
+    color:var(--muted);
+    font-size:11px;
+}
+
+.quiz-card h3{
+    font-family:var(--font-h);
+    font-size:15px;
+    margin-bottom:5px;
+}
+
+.quiz-card p{
+    color:var(--muted);
+    font-size:12px;
+    margin-bottom:17px;
+}
+
+.quiz-bottom{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+}
+
+.quiz-bottom span{
+    font-size:11px;
+    color:var(--muted);
+}
+
+.quiz-bottom a{
+    font-size:12px;
+    font-weight:700;
+    color:#765600;
+}
+
+/* ================= ACTIVITY ================= */
+
+.activity{
+    margin-top:34px;
+}
+
+.activity-card{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    overflow:hidden;
+}
+
+.activity-item{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:16px 19px;
+    border-bottom:1px solid var(--border);
+}
+
+.activity-item:last-child{
+    border-bottom:none;
+}
+
+.activity-dot{
+    width:9px;
+    height:9px;
+    background:var(--yellow);
+    border-radius:50%;
+    flex-shrink:0;
+}
+
+.activity-item strong{
+    font-size:13px;
+    display:block;
+}
+
+.activity-item span{
+    font-size:11px;
+    color:var(--muted);
+}
+
+/* ================= FOOTER ================= */
+
+footer{
+    background:#08080a;
+    color:#a1a1aa;
+    padding:25px 0;
+    border-top:4px solid var(--yellow);
+}
+
+.footer-inner{
+    display:flex;
+    justify-content:space-between;
+    gap:15px;
+    flex-wrap:wrap;
+    font-size:12px;
+}
+
+footer strong{
+    color:white;
+}
+
+/* ================= MOBILE ================= */
+
+@media(max-width:980px){
+
+    .stats{
+        grid-template-columns:1fr 1fr;
     }
 
-    .main {
-        margin-left: 210px;
+    .main-grid{
+        grid-template-columns:1fr;
     }
 
-    .stats {
-        grid-template-columns: 1fr;
+    .quiz-grid{
+        grid-template-columns:1fr 1fr;
     }
 
-    .dashboard-grid {
-        grid-template-columns: 1fr;
+    .nav-links{
+        display:none;
     }
+
 }
 
-@media (max-width: 650px) {
+@media(max-width:650px){
 
-    .sidebar {
-        position: relative;
-
-        width: 100%;
-        height: auto;
-
-        border-right: none;
-        border-bottom: 1px solid #ddd;
+    .nav-inner{
+        padding:12px 16px;
     }
 
-    .main {
-        margin-left: 0;
+    .profile-info{
+        display:none;
     }
 
-    .menu {
-        display: flex;
-        gap: 5px;
-        overflow-x: auto;
+    .container{
+        padding:0 16px;
     }
 
-    .menu li {
-        min-width: max-content;
+    .dashboard-content{
+        padding-top:25px;
     }
 
-    .sidebar-bottom {
-        margin-top: 15px;
+    .welcome{
+        padding:25px;
+        flex-direction:column;
+        align-items:flex-start;
     }
 
-    .topbar {
-        padding: 0 20px;
+    .stats{
+        grid-template-columns:1fr 1fr;
+        gap:10px;
     }
 
-    .content {
-        padding: 20px;
+    .stat-card{
+        padding:15px;
     }
 
-    .welcome {
-        padding: 22px;
+    .stat-number{
+        font-size:20px;
     }
 
-    .welcome-badge {
-        display: none;
+    .stat-icon{
+        width:40px;
+        height:40px;
+    }
+
+    .task-card{
+        align-items:flex-start;
+    }
+
+    .task-status{
+        display:none;
+    }
+
+    .quiz-grid{
+        grid-template-columns:1fr;
     }
 
 }
 
 </style>
+
 </head>
 
 <body>
 
-<!-- =====================================================
-     SIDEBAR
-===================================================== -->
+<!-- ================= NAVBAR ================= -->
 
-<aside class="sidebar">
+<header class="navbar">
+    <div class="nav-inner">
 
-    <div class="logo">
+```
+    <a href="murid.php" class="brand">
 
-        <div class="logo-icon">
-            📚
-        </div>
+        <img
+            src="assets/img/logo-smkn7.png"
+            alt="Logo SMK Negeri 7 Batam"
+        >
 
-        <div class="logo-text">
-            <h2>E-Tugas</h2>
-            <p>SKAJU Learning</p>
-        </div>
+        <span class="brand-text">
+            <strong>SLearning</strong>
+            <span>SKAJU Learning • SMKN 7</span>
+        </span>
 
-    </div>
+    </a>
 
+    <nav class="nav-links">
 
-    <div class="menu-title">
-        Menu Utama
-    </div>
-
-    <ul class="menu">
-
-        <li>
-            <a href="murid.php" class="active">
-                <span class="menu-icon">🏠</span>
-                Beranda
-            </a>
-        </li>
-
-        <li>
-            <a href="tugas_murid.php">
-                <span class="menu-icon">📚</span>
-                Tugas Saya
-            </a>
-        </li>
-
-        <li>
-            <a href="quiziz.php">
-                <span class="menu-icon">🎯</span>
-                Quiziz
-            </a>
-        </li>
-
-        <li>
-            <a href="#profile">
-                <span class="menu-icon">👤</span>
-                Profile
-            </a>
-        </li>
-
-    </ul>
-
-
-    <div class="sidebar-bottom">
-
-        <a href="logout.php" class="logout">
-            <span>🚪</span>
-            Logout
+        <a href="murid.php" class="active">
+            Dashboard
         </a>
 
+        <a href="#tugas">
+            Tugas
+        </a>
+
+        <a href="#quiz">
+            Quiziz
+        </a>
+
+        <a href="#aktivitas">
+            Aktivitas
+        </a>
+
+    </nav>
+
+    <div class="profile">
+
+        <div class="avatar">
+            <?php echo strtoupper(substr($nama_murid,0,1)); ?>
+        </div>
+
+        <div class="profile-info">
+            <strong>
+                <?php echo htmlspecialchars($nama_murid); ?>
+            </strong>
+
+            <span>
+                <?php echo htmlspecialchars($nis); ?>
+            </span>
+        </div>
+
     </div>
+
+</div>
+```
+
+</header>
+
+<!-- ================= DASHBOARD ================= -->
+
+<main class="dashboard">
+
+<div class="container dashboard-content">
+
+<!-- WELCOME -->
+
+<section class="welcome">
+
+```
+<div class="welcome-text">
+
+    <small>Dashboard Murid</small>
+
+    <h1>
+        Halo, <?php echo htmlspecialchars($nama_murid); ?> 👋
+    </h1>
+
+    <p>
+        Selamat datang di SLearning.
+        Cek tugas dan Quiziz kamu hari ini.
+    </p>
+
+</div>
+
+<div class="welcome-button">
+
+    <a href="#tugas" class="btn btn-yellow">
+        Lihat Tugas
+        <svg width="16" height="16"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2"
+             stroke-linecap="round"
+             stroke-linejoin="round">
+
+            <path d="M5 12h14"/>
+            <path d="m13 6 6 6-6 6"/>
+
+        </svg>
+    </a>
+
+</div>
+```
+
+</section>
+
+<!-- STATISTIK -->
+
+<section class="stats">
+
+```
+<div class="stat-card">
+
+    <div class="stat-icon">
+        <svg width="21" height="21"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2"
+             stroke-linecap="round"
+             stroke-linejoin="round">
+
+            <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/>
+            <path d="M14 3v5h5"/>
+            <path d="M9 13h6"/>
+            <path d="M9 17h4"/>
+
+        </svg>
+    </div>
+
+    <div>
+        <div class="stat-number">4</div>
+        <div class="stat-label">Tugas Aktif</div>
+    </div>
+
+</div>
+
+
+<div class="stat-card">
+
+    <div class="stat-icon">
+
+        <svg width="21" height="21"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2">
+
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 8v5l3 2"/>
+
+        </svg>
+
+    </div>
+
+    <div>
+        <div class="stat-number">2</div>
+        <div class="stat-label">Quiziz Tersedia</div>
+    </div>
+
+</div>
+
+
+<div class="stat-card">
+
+    <div class="stat-icon">
+
+        <svg width="21" height="21"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2">
+
+            <path d="M20 6 9 17l-5-5"/>
+
+        </svg>
+
+    </div>
+
+    <div>
+        <div class="stat-number">8</div>
+        <div class="stat-label">Tugas Selesai</div>
+    </div>
+
+</div>
+
+
+<div class="stat-card">
+
+    <div class="stat-icon">
+
+        <svg width="21" height="21"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2">
+
+            <path d="M12 2v20"/>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"/>
+
+        </svg>
+
+    </div>
+
+    <div>
+        <div class="stat-number">92</div>
+        <div class="stat-label">Nilai Rata-rata</div>
+    </div>
+
+</div>
+```
+
+</section>
+
+<!-- TUGAS + QUICK MENU -->
+
+<div class="main-grid">
+
+<section id="tugas">
+
+```
+<div class="section-head">
+
+    <div>
+        <h2>Tugas Terbaru</h2>
+        <p>Jangan sampai melewati deadline.</p>
+    </div>
+
+    <a href="#" class="btn btn-outline">
+        Lihat Semua
+    </a>
+
+</div>
+
+
+<div class="task-list">
+
+
+    <div class="task-card">
+
+        <div class="task-icon">
+
+            <svg width="22" height="22"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2"
+                 stroke-linecap="round"
+                 stroke-linejoin="round">
+
+                <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/>
+                <path d="M14 3v5h5"/>
+                <path d="M9 13h6"/>
+                <path d="M9 17h4"/>
+
+            </svg>
+
+        </div>
+
+        <div class="task-content">
+
+            <h3>
+                Laporan Praktik Kerja Lapangan
+            </h3>
+
+            <p>
+                PPLG • Deadline 4 Oktober 2026, 23.59 WIB
+            </p>
+
+        </div>
+
+        <span class="task-status status-wait">
+            Belum Kumpul
+        </span>
+
+    </div>
+
+
+    <div class="task-card">
+
+        <div class="task-icon">
+
+            <svg width="22" height="22"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+
+                <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/>
+                <path d="M14 3v5h5"/>
+                <path d="M9 13h6"/>
+                <path d="M9 17h4"/>
+
+            </svg>
+
+        </div>
+
+        <div class="task-content">
+
+            <h3>
+                Praktik PBO — Class & Object
+            </h3>
+
+            <p>
+                PPLG • Deadline 6 Oktober 2026
+            </p>
+
+        </div>
+
+        <span class="task-status status-done">
+            Sudah Kumpul
+        </span>
+
+    </div>
+
+
+    <div class="task-card">
+
+        <div class="task-icon">
+
+            <svg width="22" height="22"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="2">
+
+                <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 1 1-1V8z"/>
+                <path d="M14 3v5h5"/>
+                <path d="M9 13h6"/>
+                <path d="M9 17h4"/>
+
+            </svg>
+
+        </div>
+
+        <div class="task-content">
+
+            <h3>
+                Tugas Argumentasi Bahasa Indonesia
+            </h3>
+
+            <p>
+                Bahasa Indonesia • Deadline 8 Oktober 2026
+            </p>
+
+        </div>
+
+        <span class="task-status status-wait">
+            Belum Kumpul
+        </span>
+
+    </div>
+
+
+</div>
+```
+
+</section>
+
+<!-- QUICK MENU -->
+
+<aside class="quick-card">
+
+```
+<h3>Akses Cepat</h3>
+
+<p>
+    Akses fitur SLearning dengan cepat.
+</p>
+
+<div class="quick-menu">
+
+    <a href="#tugas">
+
+        <svg width="19" height="19"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2">
+
+            <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/>
+            <path d="M14 3v5h5"/>
+
+        </svg>
+
+        Pengumpulan Tugas
+
+    </a>
+
+
+    <a href="#quiz">
+
+        <svg width="19" height="19"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2">
+
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M9.5 9.5a2.5 2.5 0 1 1 5 0c0 1.5-2.5 2-2.5 3.5"/>
+            <path d="M12 17h.01"/>
+
+        </svg>
+
+        Quiziz
+
+    </a>
+
+
+    <a href="#aktivitas">
+
+        <svg width="19" height="19"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2">
+
+            <path d="M3 12h4l3-9 4 18 3-9h4"/>
+
+        </svg>
+
+        Aktivitas Saya
+
+    </a>
+
+
+    <a href="#">
+
+        <svg width="19" height="19"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="2">
+
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 21c1.5-4 4-6 8-6s6.5 2 8 6"/>
+
+        </svg>
+
+        Profil Saya
+
+    </a>
+
+</div>
+```
 
 </aside>
 
+</div>
 
-<!-- =====================================================
-     MAIN
-===================================================== -->
+<!-- QUIZ -->
 
-<main class="main">
+<section class="quiz-section" id="quiz">
+
+```
+<div class="section-head">
+
+    <div>
+        <h2>Quiziz Tersedia</h2>
+        <p>Kerjakan quiz yang diberikan guru.</p>
+    </div>
+
+    <a href="#" class="btn btn-outline">
+        Semua Quiz
+    </a>
+
+</div>
 
 
-    <!-- TOPBAR -->
-
-    <header class="topbar">
-
-        <div class="page-title">
-
-            <h1>Beranda</h1>
-
-            <p>Dashboard Murid E-Tugas SKAJU</p>
-
-        </div>
+<div class="quiz-grid">
 
 
-        <div class="profile-mini">
+    <article class="quiz-card">
 
-            <div class="avatar">
-                <?php echo strtoupper(substr($nama, 0, 1)); ?>
-            </div>
+        <div class="quiz-top">
 
-            <div>
+            <span class="quiz-label">
+                PPLG
+            </span>
 
-                <strong>
-                    <?php echo htmlspecialchars($nama); ?>
-                </strong>
-
-                <span>
-                    Murid
-                </span>
-
-            </div>
+            <span class="quiz-time">
+                30 menit
+            </span>
 
         </div>
 
-    </header>
+        <h3>
+            PBO — Class & Object
+        </h3>
 
+        <p>
+            20 soal pilihan ganda tentang konsep dasar PBO.
+        </p>
 
-    <!-- CONTENT -->
+        <div class="quiz-bottom">
 
-    <section class="content">
+            <span>
+                20 Soal
+            </span>
 
-
-        <!-- WELCOME -->
-
-        <div class="welcome">
-
-            <div class="welcome-text">
-
-                <h2>
-                    Halo, <?php echo htmlspecialchars($nama); ?>! 👋
-                </h2>
-
-                <p>
-                    Selamat datang di E-Tugas SKAJU.
-                    Jangan lupa cek tugas dan deadline kamu hari ini.
-                </p>
-
-            </div>
-
-
-            <div class="welcome-badge">
-                📖
-            </div>
+            <a href="#">
+                Kerjakan →
+            </a>
 
         </div>
 
-
-        <!-- STATISTICS -->
-
-        <div class="stats">
+    </article>
 
 
-            <div class="stat-card">
+    <article class="quiz-card">
 
-                <div class="stat-icon">
-                    📚
-                </div>
+        <div class="quiz-top">
 
-                <div>
+            <span class="quiz-label">
+                B. INDONESIA
+            </span>
 
-                    <h3>
-                        <?php echo $total_tugas; ?>
-                    </h3>
-
-                    <p>
-                        Total Tugas
-                    </p>
-
-                </div>
-
-            </div>
-
-
-            <div class="stat-card">
-
-                <div class="stat-icon">
-                    ✅
-                </div>
-
-                <div>
-
-                    <h3>
-                        <?php echo $sudah_kumpul; ?>
-                    </h3>
-
-                    <p>
-                        Sudah Dikumpulkan
-                    </p>
-
-                </div>
-
-            </div>
-
-
-            <div class="stat-card">
-
-                <div class="stat-icon">
-                    ⏳
-                </div>
-
-                <div>
-
-                    <h3>
-                        <?php echo $belum_kumpul; ?>
-                    </h3>
-
-                    <p>
-                        Belum Dikumpulkan
-                    </p>
-
-                </div>
-
-            </div>
+            <span class="quiz-time">
+                20 menit
+            </span>
 
         </div>
 
-
-        <!-- GRID -->
-
-        <div class="dashboard-grid">
-
-
-            <!-- LEFT -->
-
-            <div>
-
-
-                <!-- TASK -->
-
-                <div class="card">
-
-                    <div class="card-header">
-
-                        <h3>Tugas Terbaru</h3>
-
-                        <a href="tugas_murid.php">
-                            Lihat Semua →
-                        </a>
-
-                    </div>
-
-
-                    <div class="task">
-
-                        <div>
-
-                            <h4>
-                                Pemrograman Berorientasi Objek
-                            </h4>
-
-                            <p>
-                                Deadline: 30 September 2026
-                            </p>
-
-                        </div>
-
-                        <span class="status done">
-                            Sudah
-                        </span>
-
-                    </div>
-
-
-                    <div class="task">
-
-                        <div>
-
-                            <h4>
-                                Basis Data
-                            </h4>
-
-                            <p>
-                                Deadline: 2 Oktober 2026
-                            </p>
-
-                        </div>
-
-                        <span class="status pending">
-                            Belum
-                        </span>
-
-                    </div>
-
-
-                    <div class="task">
-
-                        <div>
-
-                            <h4>
-                                Bahasa Indonesia
-                            </h4>
-
-                            <p>
-                                Deadline: 4 Oktober 2026
-                            </p>
-
-                        </div>
-
-                        <span class="status done">
-                            Sudah
-                        </span>
-
-                    </div>
-
-                </div>
-
-
-                <br>
-
-
-                <!-- QUIZ -->
-
-                <div class="quiz-card">
-
-                    <h3>
-                        🎯 Quiziz
-                    </h3>
-
-                    <p>
-                        Uji pemahaman kamu dengan mengerjakan
-                        quiz yang telah diberikan oleh guru.
-                    </p>
-
-                    <a href="quiziz.php" class="quiz-button">
-                        Buka Quiziz
-                    </a>
-
-                </div>
-
-            </div>
-
-
-            <!-- RIGHT -->
-
-            <div>
-
-
-                <!-- PROFILE -->
-
-                <div class="card profile-card" id="profile">
-
-                    <div class="card-header">
-
-                        <h3>Profile Saya</h3>
-
-                    </div>
-
-
-                    <div class="profile-info">
-
-                        <div class="profile-avatar">
-
-                            <?php
-                            echo strtoupper(substr($nama, 0, 1));
-                            ?>
-
-                        </div>
-
-                        <div>
-
-                            <h3>
-                                <?php
-                                echo htmlspecialchars($nama);
-                                ?>
-                            </h3>
-
-                            <p>
-                                @<?php
-                                echo htmlspecialchars($username);
-                                ?>
-                            </p>
-
-                        </div>
-
-                    </div>
-
-
-                    <div class="info-row">
-
-                        <span>Nama</span>
-
-                        <span>
-                            <?php
-                            echo htmlspecialchars($nama);
-                            ?>
-                        </span>
-
-                    </div>
-
-
-                    <div class="info-row">
-
-                        <span>NIS</span>
-
-                        <span>
-                            <?php
-                            echo htmlspecialchars($nis);
-                            ?>
-                        </span>
-
-                    </div>
-
-
-                    <div class="info-row">
-
-                        <span>Kelas</span>
-
-                        <span>
-                            <?php
-                            echo htmlspecialchars($kelas);
-                            ?>
-                        </span>
-
-                    </div>
-
-
-                    <div class="info-row">
-
-                        <span>Status</span>
-
-                        <span style="color:#238b45;">
-                            Aktif
-                        </span>
-
-                    </div>
-
-                </div>
-
-
-                <!-- QUICK INFO -->
-
-                <div class="card">
-
-                    <div class="card-header">
-
-                        <h3>Informasi</h3>
-
-                    </div>
-
-                    <p style="
-                        font-size:12px;
-                        color:#777;
-                        line-height:1.7;
-                    ">
-
-                        Pastikan kamu mengumpulkan tugas
-                        sebelum deadline yang telah ditentukan
-                        oleh guru.
-
-                    </p>
-
-                </div>
-
-            </div>
-
+        <h3>
+            Teks Argumentasi
+        </h3>
+
+        <p>
+            Uji pemahaman tentang struktur dan kaidah argumentasi.
+        </p>
+
+        <div class="quiz-bottom">
+
+            <span>
+                15 Soal
+            </span>
+
+            <a href="#">
+                Kerjakan →
+            </a>
 
         </div>
 
-    </section>
+    </article>
+
+
+    <article class="quiz-card">
+
+        <div class="quiz-top">
+
+            <span class="quiz-label">
+                SEJARAH
+            </span>
+
+            <span class="quiz-time">
+                25 menit
+            </span>
+
+        </div>
+
+        <h3>
+            Kolonialisme & Imperialisme
+        </h3>
+
+        <p>
+            Materi kolonialisme, imperialisme, VOC, dan perlawanan.
+        </p>
+
+        <div class="quiz-bottom">
+
+            <span>
+                20 Soal
+            </span>
+
+            <a href="#">
+                Kerjakan →
+            </a>
+
+        </div>
+
+    </article>
+
+
+</div>
+```
+
+</section>
+
+<!-- AKTIVITAS -->
+
+<section class="activity" id="aktivitas">
+
+```
+<div class="section-head">
+
+    <div>
+        <h2>Aktivitas Terbaru</h2>
+        <p>Riwayat aktivitas belajar kamu.</p>
+    </div>
+
+</div>
+
+
+<div class="activity-card">
+
+    <div class="activity-item">
+
+        <span class="activity-dot"></span>
+
+        <div>
+            <strong>
+                Mengumpulkan tugas PBO — Class & Object
+            </strong>
+
+            <span>
+                Hari ini • Nilai: 92
+            </span>
+        </div>
+
+    </div>
+
+
+    <div class="activity-item">
+
+        <span class="activity-dot"></span>
+
+        <div>
+            <strong>
+                Menyelesaikan Quiziz Jaringan Komputer
+            </strong>
+
+            <span>
+                30 September 2026 • Nilai: 95
+            </span>
+        </div>
+
+    </div>
+
+
+    <div class="activity-item">
+
+        <span class="activity-dot"></span>
+
+        <div>
+            <strong>
+                Mengumpulkan tugas Bahasa Indonesia
+            </strong>
+
+            <span>
+                29 September 2026 • Menunggu penilaian
+            </span>
+        </div>
+
+    </div>
+
+
+</div>
+```
+
+</section>
+
+</div>
 
 </main>
+
+<!-- ================= FOOTER ================= -->
+
+<footer>
+
+```
+<div class="container">
+
+    <div class="footer-inner">
+
+        <span>
+            © <?php echo date('Y'); ?>
+            <strong>SLearning</strong>
+            — SMK Negeri 7 Batam
+        </span>
+
+        <span>
+            Dashboard Murid
+        </span>
+
+    </div>
+
+</div>
+```
+
+</footer>
 
 </body>
 </html>
