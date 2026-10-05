@@ -153,10 +153,49 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aks
     exit;
 }
 
+<<<<<<< HEAD
 $nama_guru = $_SESSION['nama'] ?? 'Budi Santoso, S.Kom';
 $nip = $_SESSION['nip'] ?? 'NIP. 19850723 201001 1 015';
 $mapel = 'Kejuruan PPLG';
 $waktu_sekarang = date('Y-m-d H:i');
+=======
+// Ambil data guru dari tabel slearning_db.login
+require_once __DIR__ . '/config/koneksi.php';
+
+$user_id = (int) $_SESSION['user_id'];
+$stmt = mysqli_prepare(
+    $koneksi,
+    "SELECT id, nama, username, email, jenis, level FROM login WHERE id = ? LIMIT 1"
+);
+mysqli_stmt_bind_param($stmt, "i", $user_id);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$user = mysqli_fetch_assoc($result);
+mysqli_stmt_close($stmt);
+
+if (!$user) {
+    // Session ada tapi user tidak ada di tabel login
+    header("Location: logout.php");
+    exit;
+}
+
+// Sinkronkan session dengan tabel login
+$_SESSION['nama']     = $user['nama'];
+$_SESSION['username'] = $user['username'];
+$_SESSION['email']    = $user['email'];
+$_SESSION['jenis']    = $user['jenis'];
+$_SESSION['level']    = $user['level'] ?? 'user';
+
+$nama_guru     = $user['nama'];
+$username_guru = $user['username'];
+$email_guru    = $user['email'];
+$level_guru    = $user['level'] ?? 'user';
+
+// Hari ini (tanggal dinamis Indonesia)
+$hari_list = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+$bulan_list = [1=>'Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+$hari_ini = $hari_list[(int)date('w')] . ', ' . date('j') . ' ' . $bulan_list[(int)date('n')] . ' ' . date('Y');
+>>>>>>> 2a7e7f6a706ca512e157966b26e09512c45e78a2
 ?>
 
 <!DOCTYPE html>
@@ -507,11 +546,32 @@ textarea.form-control{ resize:vertical; min-height:100px; }
         <aside class="sidebar">
             <div class="sidebar-widget dark">
                 <h3>Profil Pengajar</h3>
+<<<<<<< HEAD
                 <p class="subtitle">Data Dapodik</p>
                 <div class="profile-detail">
                     <div class="item"><span class="label">Nama</span><span class="value"><?php echo $nama_guru; ?></span></div>
                     <div class="item"><span class="label">NIP</span><span class="value"><?php echo $nip; ?></span></div>
                     <div class="item"><span class="label">Mapel</span><span class="value"><?php echo $mapel; ?></span></div>
+=======
+                <p class="subtitle">Data dari tabel login • slearning_db</p>
+                <div class="profile-detail">
+                    <div class="item">
+                        <span class="label">Nama Lengkap</span>
+                        <span class="value"><?php echo htmlspecialchars($nama_guru); ?></span>
+                    </div>
+                    <div class="item">
+                        <span class="label">Username</span>
+                        <span class="value"><?php echo htmlspecialchars($username_guru); ?></span>
+                    </div>
+                    <div class="item">
+                        <span class="label">Email</span>
+                        <span class="value"><?php echo htmlspecialchars($email_guru); ?></span>
+                    </div>
+                    <div class="item">
+                        <span class="label">Jenis / Level</span>
+                        <span class="value"><?php echo htmlspecialchars('guru • ' . $level_guru); ?></span>
+                    </div>
+>>>>>>> 2a7e7f6a706ca512e157966b26e09512c45e78a2
                 </div>
             </div>
         </aside>

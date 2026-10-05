@@ -41,16 +41,17 @@ try {
         ]
     );
 
-    // Membuat tabel otomatis jika belum ada (tanpa kolom role)
+    // Membuat tabel otomatis jika belum ada (sesuai slearning_db.login)
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS login (
-         id INT AUTO_INCREMENT PRIMARY KEY,
-         nama VARCHAR(100) NOT NULL,
-         username VARCHAR(50) NOT NULL UNIQUE,
-         email VARCHAR(100) NOT NULL UNIQUE,
-         password VARCHAR(255) NOT NULL,
-         jenis ENUM('guru', 'murid') NOT NULL
-    );
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            nama VARCHAR(100) NOT NULL,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            email VARCHAR(100) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            jenis ENUM('guru','murid') NOT NULL,
+            level ENUM('admin','user') NOT NULL DEFAULT 'user'
+        )
     ");
 
 } catch (PDOException $e) {
@@ -121,8 +122,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $stmt = $pdo->prepare("
                     INSERT INTO login
+<<<<<<< HEAD
                     (nama, username, email, password, jenis)
                     VALUES (?, ?, ?, ?, ?)
+=======
+                    (nama, username, email, password, jenis, level)
+                    VALUES (?, ?, ?, ?, ?, 'user')
+>>>>>>> 2a7e7f6a706ca512e157966b26e09512c45e78a2
                 ");
 
                 $stmt->execute([
@@ -151,9 +157,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         } else {
 
-            // Cari akun berdasarkan username
+            // Cari akun berdasarkan username di tabel login
             $stmt = $pdo->prepare("
-                SELECT * FROM users
+                SELECT * FROM login
                 WHERE username = ?
                 LIMIT 1
             ");
@@ -171,6 +177,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $_SESSION["username"] = $user["username"];
                 $_SESSION["email"] = $user["email"] ?? "";
                 $_SESSION["jenis"] = $user["jenis"];
+                $_SESSION["level"] = $user["level"] ?? "user";
 
                 // Langsung pindahkan ke halaman sesuai jenis akun
                 if ($user["jenis"] === "guru") {
