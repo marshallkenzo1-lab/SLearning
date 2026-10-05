@@ -1,4 +1,3 @@
-
 <?php
 session_start();
 
@@ -20,7 +19,6 @@ $nama = "";
 $username = "";
 $email = "";
 $jenis = "murid";
-$role = "user";
 
 try {
     $pdo = new PDO(
@@ -33,18 +31,16 @@ try {
         ]
     );
 
-    // Membuat tabel otomatis jika belum ada
+    // Membuat tabel otomatis jika belum ada (tanpa kolom role)
     $pdo->exec("
-        CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            nama VARCHAR(100) NOT NULL,
-            username VARCHAR(50) NOT NULL UNIQUE,
-            email VARCHAR(150) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            jenis ENUM('guru','murid') NOT NULL,
-            role ENUM('admin','user') NOT NULL DEFAULT 'user',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
+        CREATE TABLE IF NOT EXISTS login (
+         id INT AUTO_INCREMENT PRIMARY KEY,
+         nama VARCHAR(100) NOT NULL,
+         username VARCHAR(50) NOT NULL UNIQUE,
+         email VARCHAR(100) NOT NULL UNIQUE,
+         password VARCHAR(255) NOT NULL,
+         jenis ENUM('guru', 'murid') NOT NULL
+    );
     ");
 
 } catch (PDOException $e) {
@@ -67,7 +63,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $nama = trim($_POST["nama"] ?? "");
         $email = trim($_POST["email"] ?? "");
         $jenis = $_POST["jenis"] ?? "";
-        $role = $_POST["role"] ?? "";
         $confirm = $_POST["confirm_password"] ?? "";
 
         // Validasi
@@ -86,9 +81,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         } elseif (!in_array($jenis, ["guru", "murid"], true)) {
             $error = "Pilih jenis pendaftaran yang valid!";
 
-        } elseif (!in_array($role, ["admin", "user"], true)) {
-            $error = "Pilih jenis akun yang valid!";
-
         } elseif (strlen($password) < 8) {
             $error = "Password minimal 8 karakter!";
 
@@ -99,7 +91,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             // Cek username atau email sudah digunakan
             $check = $pdo->prepare("
-                SELECT id FROM users
+                SELECT id FROM login
                 WHERE username = ? OR email = ?
             ");
 
@@ -119,8 +111,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $stmt = $pdo->prepare("
                     INSERT INTO users
-                    (nama, username, email, password, jenis, role)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (nama, username, email, password, jenis)
+                    VALUES (?, ?, ?, ?, ?)
                 ");
 
                 $stmt->execute([
@@ -128,8 +120,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $username,
                     $email,
                     $hashedPassword,
-                    $jenis,
-                    $role
+                    $jenis
                 ]);
 
                 $success = "Pendaftaran berhasil! Silakan masuk menggunakan username dan password.";
@@ -139,7 +130,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $username = "";
                 $email = "";
                 $jenis = "murid";
-                $role = "user";
             }
         }
 
@@ -170,7 +160,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $_SESSION["nama"] = $user["nama"];
                 $_SESSION["username"] = $user["username"];
                 $_SESSION["jenis"] = $user["jenis"];
-                $_SESSION["role"] = $user["role"];
 
                 $success = "Login berhasil! Selamat datang, " . $user["nama"] . ".";
 
@@ -224,14 +213,10 @@ body {
     gap: 14px;
 }
 
-.logo-icon {
-    width: 55px;
-    height: 55px;
-    display: grid;
-    place-items: center;
-    border: 1px solid #ddd;
-    border-radius: 15px;
-    font-size: 26px;
+.logo img {
+    width: 50px;
+    height: 50px;
+    object-fit: contain;
 }
 
 .logo h2 {
@@ -248,13 +233,6 @@ body {
 .nav-menu {
     display: flex;
     align-items: center;
-    gap: 30px;
-}
-
-.nav-menu a {
-    text-decoration: none;
-    color: #515c6d;
-    font-weight: 600;
 }
 
 .nav-menu .nav-button {
@@ -262,6 +240,8 @@ body {
     border: 1px solid #ddd;
     border-radius: 13px;
     color: #171717;
+    text-decoration: none;
+    font-weight: 600;
 }
 
 /* MAIN */
@@ -301,15 +281,12 @@ body {
 }
 
 .hero h1 {
-    font-size: clamp(45px, 5vw, 68px);
+    font-size: clamp(32px, 4vw, 55px);
     line-height: 1.12;
     font-weight: 800;
-    letter-spacing: -2px;
+    letter-spacing: -1px;
     margin-bottom: 25px;
-}
-
-.highlight {
-    box-shadow: inset 0 -15px #ffc107;
+    text-transform: uppercase;
 }
 
 .hero p {
@@ -564,10 +541,6 @@ body {
 /* RESPONSIVE */
 
 @media(max-width: 950px) {
-    .nav-menu {
-        display: none;
-    }
-
     .main {
         grid-template-columns: 1fr;
         padding: 45px 6%;
@@ -598,9 +571,9 @@ body {
         padding: 0 5%;
     }
 
-    .logo-icon {
-        width: 45px;
-        height: 45px;
+    .logo img {
+        width: 40px;
+        height: 40px;
     }
 
     .logo h2 {
@@ -616,7 +589,7 @@ body {
     }
 
     .hero h1 {
-        font-size: 42px;
+        font-size: 35px;
     }
 
     .hero p {
@@ -644,10 +617,9 @@ body {
 
 <header class="navbar">
 
-
-
     <div class="logo">
-        <div class="logo-icon">🎓</div>
+        <!-- Pastikan nama file gambar logo sesuai (contoh: image_a630c8.png) -->
+        <img src="image_a630c8.png" alt="Logo SMK Negeri 7 Batam">
 
         <div>
             <h2>SLearning</h2>
@@ -656,10 +628,6 @@ body {
     </div>
 
     <nav class="nav-menu">
-        <a href="#">Fitur</a>
-        <a href="#">Jurusan</a>
-        <a href="#">Cara Kerja</a>
-        <a href="#">Kontak</a>
         <a href="#auth" class="nav-button">Masuk</a>
     </nav>
 
@@ -678,11 +646,13 @@ body {
         </div>
 
         <h1>
-            Belajar Lebih Cepat.
+            SMK NEGERI 7 BATAM
             <br>
-            Kumpul Tepat
+            INOVATIF DAN
             <br>
-            <span class="highlight">Waktu.</span>
+            BERBUDAYA
+            <br>
+            SMK BISA SMK HEBAT
         </h1>
 
         <p>
@@ -780,33 +750,6 @@ body {
                         <option value="murid"
                             <?= $jenis === "murid" ? "selected" : "" ?>>
                             Murid
-                        </option>
-
-                    </select>
-
-                </div>
-
-                <!-- ROLE AKUN -->
-
-                <div class="form-group">
-
-                    <label for="role">
-                        Pilih jenis akun
-                    </label>
-
-                    <select
-                        name="role"
-                        id="role"
-                        class="select-box">
-
-                        <option value="user"
-                            <?= $role === "user" ? "selected" : "" ?>>
-                            User
-                        </option>
-
-                        <option value="admin"
-                            <?= $role === "admin" ? "selected" : "" ?>>
-                            Admin
                         </option>
 
                     </select>
