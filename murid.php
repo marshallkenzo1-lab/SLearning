@@ -7,19 +7,10 @@ session_start();
 
 
 // =========================================================
-// KONEKSI DATABASE
+// KONEKSI DATABASE (slearning_db, tabel login)
 // =========================================================
 
-$koneksi = mysqli_connect(
-    "localhost",
-    "root",
-    "",
-    "slearning_db"
-);
-
-if (!$koneksi) {
-    die("Koneksi database gagal: " . mysqli_connect_error());
-}
+require_once __DIR__ . '/config/koneksi.php';
 
 
 // =========================================================
@@ -58,8 +49,8 @@ if (!empty($user_id_session)) {
 
     $stmt = mysqli_prepare(
         $koneksi,
-        "SELECT id, nama, username, email, jenis, role, created_at
-         FROM users
+        "SELECT id, nama, username, email, jenis, level
+         FROM login
          WHERE id = ?
          LIMIT 1"
     );
@@ -85,8 +76,8 @@ if (!empty($username_session)) {
 
     $stmt = mysqli_prepare(
         $koneksi,
-        "SELECT id, nama, username, email, jenis, role, created_at
-         FROM users
+        "SELECT id, nama, username, email, jenis, level
+         FROM login
          WHERE username = ?
          LIMIT 1"
     );
@@ -112,8 +103,8 @@ if (!$user && !empty($email_session)) {
 
     $stmt = mysqli_prepare(
         $koneksi,
-        "SELECT id, nama, username, email, jenis, role, created_at
-         FROM users
+        "SELECT id, nama, username, email, jenis, level
+         FROM login
          WHERE email = ?
          LIMIT 1"
     );
@@ -139,8 +130,8 @@ if (!$user && !empty($nama_session)) {
 
     $stmt = mysqli_prepare(
         $koneksi,
-        "SELECT id, nama, username, email, jenis, role, created_at
-         FROM users
+        "SELECT id, nama, username, email, jenis, level
+         FROM login
          WHERE nama = ?
          LIMIT 1"
     );
@@ -171,7 +162,14 @@ if ($user) {
     $username   = $user['username'];
     $email      = $user['email'];
     $jenis      = $user['jenis'];
-    $role       = $user['role'];
+    $level      = $user['level'] ?? 'user';
+
+    // Sinkronkan session agar konsisten dengan tabel login
+    $_SESSION['nama']     = $nama_murid;
+    $_SESSION['username'] = $username;
+    $_SESSION['email']    = $email;
+    $_SESSION['jenis']    = $jenis;
+    $_SESSION['level']    = $level;
 
 } else {
 
