@@ -122,13 +122,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 $stmt = $pdo->prepare("
                     INSERT INTO login
-<<<<<<< HEAD
-                    (nama, username, email, password, jenis)
-                    VALUES (?, ?, ?, ?, ?)
-=======
                     (nama, username, email, password, jenis, level)
                     VALUES (?, ?, ?, ?, ?, 'user')
->>>>>>> 2a7e7f6a706ca512e157966b26e09512c45e78a2
                 ");
 
                 $stmt->execute([

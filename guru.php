@@ -2,6 +2,17 @@
 // SLearning - SKAJU Learning | Dashboard Guru
 session_start();
 
+// Proteksi: wajib login, hanya guru yang boleh akses
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
+
+if (($_SESSION['jenis'] ?? '') === 'murid') {
+    header("Location: murid.php");
+    exit;
+}
+
 // Inisialisasi array tugas di session jika belum ada
 if (!isset($_SESSION['list_tugas'])) {
     $_SESSION['list_tugas'] = [
@@ -153,12 +164,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aks
     exit;
 }
 
-<<<<<<< HEAD
-$nama_guru = $_SESSION['nama'] ?? 'Budi Santoso, S.Kom';
-$nip = $_SESSION['nip'] ?? 'NIP. 19850723 201001 1 015';
-$mapel = 'Kejuruan PPLG';
+// Waktu sekarang untuk penanda status tugas (Aktif / Lewat Tenggat)
 $waktu_sekarang = date('Y-m-d H:i');
-=======
+
 // Ambil data guru dari tabel slearning_db.login
 require_once __DIR__ . '/config/koneksi.php';
 
@@ -195,7 +203,6 @@ $level_guru    = $user['level'] ?? 'user';
 $hari_list = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
 $bulan_list = [1=>'Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 $hari_ini = $hari_list[(int)date('w')] . ', ' . date('j') . ' ' . $bulan_list[(int)date('n')] . ' ' . date('Y');
->>>>>>> 2a7e7f6a706ca512e157966b26e09512c45e78a2
 ?>
 
 <!DOCTYPE html>
@@ -264,6 +271,8 @@ button{ font-family:inherit; cursor:pointer; }
 .btn-outline:hover { background: var(--bg-soft); }
 .btn-danger { background: #feecec; color: #dc2626; }
 .btn-danger:hover { background: #fca5a5; color: white; }
+.btn-logout { background: #fff; border: 1px solid var(--border); color: #b42318; }
+.btn-logout:hover { background: #fef2f2; border-color: #f5c2c0; color: #912018; }
 
 .form-card{ background:white; border:1px solid var(--border); border-radius:var(--radius); padding:24px; margin-bottom:32px; }
 .form-group{ display:flex; flex-direction:column; gap:8px; margin-bottom:18px; }
@@ -324,6 +333,26 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 .badge-red{ background:#feecec; color:#dc2626; }
 .badge-yellow{ background:var(--yellow-soft); color:#8a6500; }
 .nilai-input { width: 60px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; text-align: center; font-weight: bold;}
+
+/* RESPONSIVE */
+@media(max-width:980px){
+    .stats{ grid-template-columns:1fr 1fr; }
+    .main-grid{ grid-template-columns:1fr; }
+    .tool-grid{ grid-template-columns:repeat(2,1fr); }
+    .class-grid{ grid-template-columns:1fr 1fr; }
+    .nav-links{ display:none; }
+}
+@media(max-width:650px){
+    .nav-inner{ padding:12px 16px; gap:12px; }
+    .nav-tools{ padding-left:0; border-left:none; gap:10px; margin-left:auto; }
+    .profile-info{ display:none; }
+    .btn-logout{ padding:9px 12px; font-size:12px; }
+    .container{ padding:0 16px; }
+    .stats{ grid-template-columns:1fr 1fr; gap:10px; }
+    .class-grid{ grid-template-columns:1fr; }
+    .form-row{ grid-template-columns:1fr; }
+    .task-card{ flex-direction:column; align-items:flex-start; }
+}
 </style>
 </head>
 
@@ -346,6 +375,7 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                 <div class="avatar"><?php echo strtoupper(substr($nama_guru, 0, 1)); ?></div>
                 <div class="profile-info"><strong><?php echo htmlspecialchars($nama_guru); ?></strong><span>Pengajar</span></div>
             </div>
+            <a href="logout.php" class="btn btn-logout" onclick="return confirm('Yakin ingin keluar?')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Keluar</a>
         </div>
     </div>
 </header>
@@ -354,10 +384,10 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 <div class="container dashboard-content">
 
     <section class="stats">
-        <div class="stat-card"><div class="stat-icon">📁</div><div><div class="stat-number"><?php echo count($_SESSION['list_tugas']); ?></div><div class="stat-label">Tugas Dibuat</div></div></div>
-        <div class="stat-card"><div class="stat-icon">📋</div><div><div class="stat-number"><?php echo count($_SESSION['list_absensi']); ?></div><div class="stat-label">Sesi Absen Aktif</div></div></div>
-        <div class="stat-card"><div class="stat-icon">👥</div><div><div class="stat-number"><?php echo count($_SESSION['list_kelas']); ?></div><div class="stat-label">Kelas Terdaftar</div></div></div>
-        <div class="stat-card"><div class="stat-icon">📊</div><div><div class="stat-number">86%</div><div class="stat-label">Partisipasi</div></div></div>
+        <div class="stat-card"><div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="stat-number"><?php echo count($_SESSION['list_tugas']); ?></div><div class="stat-label">Tugas Dibuat</div></div></div>
+        <div class="stat-card"><div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 14l2 2 4-4"/></svg></div><div><div class="stat-number"><?php echo count($_SESSION['list_absensi']); ?></div><div class="stat-label">Sesi Absen Aktif</div></div></div>
+        <div class="stat-card"><div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><div class="stat-number"><?php echo count($_SESSION['list_kelas']); ?></div><div class="stat-label">Kelas Terdaftar</div></div></div>
+        <div class="stat-card"><div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></div><div><div class="stat-number">86%</div><div class="stat-label">Partisipasi</div></div></div>
     </section>
 
     <div class="main-grid">
@@ -367,10 +397,10 @@ textarea.form-control{ resize:vertical; min-height:100px; }
             <section id="alat-guru">
                 <div class="section-head"><div><h2>Alat Mengajar</h2><p>Akses cepat fitur kelas.</p></div></div>
                 <div class="tool-grid">
-                    <button class="tool-btn" onclick="openModal('modalBukuNilai')">📖 Buku Nilai</button>
-                    <button class="tool-btn" onclick="openModal('modalRekapAbsensi')">📋 Rekap Absensi</button>
-                    <button class="tool-btn" onclick="openModal('modalPengumuman')">📢 Buat Pengumuman</button>
-                    <button class="tool-btn" onclick="openModal('modalEksporData')">📥 Ekspor Data</button>
+                    <button class="tool-btn" onclick="openModal('modalBukuNilai')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>Buku Nilai</button>
+                    <button class="tool-btn" onclick="openModal('modalRekapAbsensi')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 14l2 2 4-4"/></svg>Rekap Absensi</button>
+                    <button class="tool-btn" onclick="openModal('modalPengumuman')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>Buat Pengumuman</button>
+                    <button class="tool-btn" onclick="openModal('modalEksporData')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Ekspor Data</button>
                 </div>
             </section>
 
@@ -400,7 +430,7 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                         <h4><?php echo htmlspecialchars($kls['nama_kelas']); ?></h4>
                         <p><?php echo $kls['jml_murid']; ?> Murid Tergabung</p>
                         <div class="code-box" title="Klik untuk salin kode" onclick="navigator.clipboard.writeText('<?php echo $kls['kode_gabung']; ?>'); alert('Kode kelas <?php echo $kls['kode_gabung']; ?> berhasil disalin!');">
-                            🔑 <?php echo htmlspecialchars($kls['kode_gabung']); ?>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px;"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><?php echo htmlspecialchars($kls['kode_gabung']); ?>
                         </div>
                     </div>
                     <?php endforeach; ?>
@@ -452,7 +482,7 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                 <div class="task-list">
                     <?php foreach ($_SESSION['list_absensi'] as $absen): ?>
                     <div class="task-card">
-                        <div class="task-icon">📋</div>
+                        <div class="task-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg></div>
                         <div class="task-content">
                             <h3>
                                 Absensi Pertemuan — <?php echo htmlspecialchars($absen['kelas']); ?>
@@ -517,7 +547,7 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                         $status_lewat = ($tugas['deadline'] < $waktu_sekarang);
                     ?>
                     <div class="task-card">
-                        <div class="task-icon">📄</div>
+                        <div class="task-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
                         <div class="task-content">
                             <h3>
                                 <?php echo htmlspecialchars($tugas['judul'] ?? ''); ?> 
@@ -546,13 +576,6 @@ textarea.form-control{ resize:vertical; min-height:100px; }
         <aside class="sidebar">
             <div class="sidebar-widget dark">
                 <h3>Profil Pengajar</h3>
-<<<<<<< HEAD
-                <p class="subtitle">Data Dapodik</p>
-                <div class="profile-detail">
-                    <div class="item"><span class="label">Nama</span><span class="value"><?php echo $nama_guru; ?></span></div>
-                    <div class="item"><span class="label">NIP</span><span class="value"><?php echo $nip; ?></span></div>
-                    <div class="item"><span class="label">Mapel</span><span class="value"><?php echo $mapel; ?></span></div>
-=======
                 <p class="subtitle">Data dari tabel login • slearning_db</p>
                 <div class="profile-detail">
                     <div class="item">
@@ -571,7 +594,6 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                         <span class="label">Jenis / Level</span>
                         <span class="value"><?php echo htmlspecialchars('guru • ' . $level_guru); ?></span>
                     </div>
->>>>>>> 2a7e7f6a706ca512e157966b26e09512c45e78a2
                 </div>
             </div>
         </aside>
@@ -582,7 +604,7 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 <!-- MODAL DETAIL TUGAS -->
 <div class="modal-overlay" id="modalDetailTugas">
     <div class="modal-content" style="max-width: 950px;">
-        <button class="btn-close" onclick="closeModal('modalDetailTugas')">✕</button>
+        <button class="btn-close" onclick="closeModal('modalDetailTugas')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         <h2 style="font-family:var(--font-h); font-size:22px; margin-bottom: 20px;">Manajemen Tugas & Konfirmasi Susulan</h2>
 
         <div class="task-review-box" id="infoTugasBox" style="background:var(--bg-soft); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:24px;">
@@ -655,12 +677,12 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 </div>
 
 <!-- MODAL BUKU NILAI -->
-<div class="modal-overlay" id="modalBukuNilai"><div class="modal-content"><button class="btn-close" onclick="closeModal('modalBukuNilai')">✕</button><h2>Buku Nilai</h2></div></div>
+<div class="modal-overlay" id="modalBukuNilai"><div class="modal-content"><button class="btn-close" onclick="closeModal('modalBukuNilai')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button><h2>Buku Nilai</h2></div></div>
 
 <!-- MODAL REKAP ABSENSI -->
 <div class="modal-overlay" id="modalRekapAbsensi">
     <div class="modal-content">
-        <button class="btn-close" onclick="closeModal('modalRekapAbsensi')">✕</button>
+        <button class="btn-close" onclick="closeModal('modalRekapAbsensi')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         <h2 style="font-family:var(--font-h); font-size:22px; margin-bottom: 6px;">Rekap Kehadiran Murid</h2>
         <p style="color:var(--muted); font-size:13px; margin-bottom: 20px;">Pantau status kehadiran siswa secara berkala.</p>
         <div class="data-table-container">
@@ -677,10 +699,10 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 </div>
 
 <!-- MODAL PENGUMUMAN -->
-<div class="modal-overlay" id="modalPengumuman"><div class="modal-content sm"><button class="btn-close" onclick="closeModal('modalPengumuman')">✕</button><h2>Buat Pengumuman</h2></div></div>
+<div class="modal-overlay" id="modalPengumuman"><div class="modal-content sm"><button class="btn-close" onclick="closeModal('modalPengumuman')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button><h2>Buat Pengumuman</h2></div></div>
 
 <!-- MODAL EKSPOR DATA -->
-<div class="modal-overlay" id="modalEksporData"><div class="modal-content sm"><button class="btn-close" onclick="closeModal('modalEksporData')">✕</button><h2>Ekspor Data</h2></div></div>
+<div class="modal-overlay" id="modalEksporData"><div class="modal-content sm"><button class="btn-close" onclick="closeModal('modalEksporData')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button><h2>Ekspor Data</h2></div></div>
 
 <script>
     function openModal(modalId) { document.getElementById(modalId).classList.add('active'); document.body.style.overflow = 'hidden'; }
