@@ -189,6 +189,141 @@ $inisial = strtoupper(
 
 
 // =========================================================
+// GABUNG KELAS
+// =========================================================
+
+$pesan_kelas = $_SESSION['pesan_kelas'] ?? '';
+$tipe_pesan_kelas = $_SESSION['tipe_pesan_kelas'] ?? '';
+unset($_SESSION['pesan_kelas'], $_SESSION['tipe_pesan_kelas']);
+
+// Proses murid bergabung menggunakan kode kelas.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['gabung_kelas'])) {
+
+    $kode_gabung = strtoupper(trim($_POST['kode_gabung'] ?? ''));
+
+    if ($kode_gabung === '') {
+        $_SESSION['pesan_kelas'] = 'Masukkan kode gabung kelas terlebih dahulu.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+        header('Location: murid.php#kelas');
+        exit;
+    }
+
+    $stmt_kelas = mysqli_prepare(
+        $koneksi,
+        "SELECT id, nama_kelas, kode_gabung, guru_id
+         FROM kelas
+         WHERE kode_gabung = ?
+         LIMIT 1"
+    );
+
+    if (!$stmt_kelas) {
+        $_SESSION['pesan_kelas'] = 'Tabel kelas belum siap. Jalankan SQL tabel kelas terlebih dahulu.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+        header('Location: murid.php#kelas');
+        exit;
+    }
+
+    mysqli_stmt_bind_param($stmt_kelas, 's', $kode_gabung);
+    mysqli_stmt_execute($stmt_kelas);
+    $hasil_kelas = mysqli_stmt_get_result($stmt_kelas);
+    $kelas_ditemukan = mysqli_fetch_assoc($hasil_kelas);
+    mysqli_stmt_close($stmt_kelas);
+
+    if (!$kelas_ditemukan) {
+        $_SESSION['pesan_kelas'] = 'Kode kelas tidak ditemukan. Cek kembali kode yang diberikan guru.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+        header('Location: murid.php#kelas');
+        exit;
+    }
+
+    // Cek apakah murid sudah tergabung.
+    $stmt_cek_anggota = mysqli_prepare(
+        $koneksi,
+        "SELECT id
+         FROM anggota_kelas
+         WHERE kelas_id = ? AND user_id = ?
+         LIMIT 1"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt_cek_anggota,
+        'ii',
+        $kelas_ditemukan['id'],
+        $user_id_session
+    );
+
+    mysqli_stmt_execute($stmt_cek_anggota);
+    $hasil_cek_anggota = mysqli_stmt_get_result($stmt_cek_anggota);
+    $sudah_anggota = mysqli_fetch_assoc($hasil_cek_anggota);
+    mysqli_stmt_close($stmt_cek_anggota);
+
+    if ($sudah_anggota) {
+        $_SESSION['pesan_kelas'] = 'Kamu sudah tergabung di kelas tersebut.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+        header('Location: murid.php#kelas');
+        exit;
+    }
+
+    // Masukkan murid ke kelas.
+    $stmt_gabung = mysqli_prepare(
+        $koneksi,
+        "INSERT INTO anggota_kelas (kelas_id, user_id)
+         VALUES (?, ?)"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt_gabung,
+        'ii',
+        $kelas_ditemukan['id'],
+        $user_id_session
+    );
+
+    if (mysqli_stmt_execute($stmt_gabung)) {
+        $_SESSION['pesan_kelas'] = 'Berhasil bergabung ke kelas ' . $kelas_ditemukan['nama_kelas'] . '.';
+        $_SESSION['tipe_pesan_kelas'] = 'success';
+    } else {
+        $_SESSION['pesan_kelas'] = 'Gagal bergabung ke kelas.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+    }
+
+    mysqli_stmt_close($stmt_gabung);
+
+    header('Location: murid.php#kelas');
+    exit;
+}
+
+// Ambil daftar kelas yang sudah diikuti murid.
+$daftar_kelas = [];
+
+$stmt_daftar_kelas = mysqli_prepare(
+    $koneksi,
+    "SELECT
+        k.id,
+        k.nama_kelas,
+        k.kode_gabung,
+        ak.joined_at
+     FROM anggota_kelas ak
+     INNER JOIN kelas k ON k.id = ak.kelas_id
+     WHERE ak.user_id = ?
+     ORDER BY ak.joined_at DESC"
+);
+
+if ($stmt_daftar_kelas) {
+    mysqli_stmt_bind_param($stmt_daftar_kelas, 'i', $user_id_session);
+    mysqli_stmt_execute($stmt_daftar_kelas);
+    $hasil_daftar_kelas = mysqli_stmt_get_result($stmt_daftar_kelas);
+
+    while ($row_kelas = mysqli_fetch_assoc($hasil_daftar_kelas)) {
+        $daftar_kelas[] = $row_kelas;
+    }
+
+    mysqli_stmt_close($stmt_daftar_kelas);
+}
+
+$total_kelas = count($daftar_kelas);
+
+
+// =========================================================
 // PENGUMPULAN TUGAS
 // =========================================================
 
@@ -1208,6 +1343,173 @@ h4{
 
 
 /* =====================================================
+   GABUNG KELAS
+====================================================== */
+
+.class-section{
+    margin-bottom:40px;
+}
+
+.class-join-box{
+    background:#fff;
+    border:1px solid var(--border);
+    border-left:5px solid var(--yellow);
+    border-radius:var(--radius-lg);
+    padding:25px;
+    margin-bottom:18px;
+}
+
+.class-join-head h2{
+    font-family:var(--font-h);
+    color:var(--text);
+    font-size:21px;
+    margin-bottom:5px;
+}
+
+.class-join-head p{
+    color:var(--muted);
+    font-size:13px;
+    margin-bottom:18px;
+}
+
+.class-join-form{
+    display:flex;
+    gap:14px;
+}
+
+.class-code-input{
+    flex:1;
+    min-width:0;
+    height:58px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8f8f9;
+    padding:0 18px;
+    color:var(--text);
+    font-family:var(--font-h);
+    font-size:15px;
+    outline:none;
+    text-transform:uppercase;
+}
+
+.class-code-input:focus{
+    border-color:var(--yellow);
+    background:#fff;
+    box-shadow:0 0 0 3px rgba(255,193,7,.12);
+}
+
+.class-join-btn{
+    height:58px;
+    padding:0 24px;
+    border:0;
+    border-radius:14px;
+    background:var(--yellow);
+    color:#111;
+    font-family:var(--font-h);
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+}
+
+.class-join-btn:hover{
+    background:var(--yellow-hover);
+}
+
+.class-alert{
+    padding:13px 16px;
+    border-radius:12px;
+    margin-bottom:15px;
+    font-size:12px;
+    font-weight:600;
+}
+
+.class-alert.success{
+    background:#eaf8ef;
+    color:#16713a;
+    border:1px solid #c5e8d0;
+}
+
+.class-alert.error{
+    background:#fff0f0;
+    color:#b42323;
+    border:1px solid #efc8c8;
+}
+
+.class-list-title{
+    font-family:var(--font-h);
+    color:var(--text);
+    font-size:17px;
+    margin-bottom:12px;
+}
+
+.class-list{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:16px;
+}
+
+.class-card{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:17px;
+    padding:20px;
+    transition:.2s;
+}
+
+.class-card:hover{
+    transform:translateY(-3px);
+    box-shadow:var(--shadow);
+}
+
+.class-card-icon{
+    width:44px;
+    height:44px;
+    border-radius:12px;
+    background:var(--yellow-soft);
+    color:#7a5b00;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin-bottom:13px;
+}
+
+.class-card h3{
+    font-family:var(--font-h);
+    color:var(--text);
+    font-size:16px;
+    margin-bottom:5px;
+}
+
+.class-card p{
+    color:var(--muted);
+    font-size:11px;
+    margin-bottom:13px;
+}
+
+.class-code{
+    display:block;
+    padding:10px 12px;
+    border:1px dashed #d9d9dc;
+    border-radius:11px;
+    background:#f8f8f9;
+    color:var(--text);
+    font-family:var(--font-h);
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:.04em;
+}
+
+.class-empty{
+    padding:20px;
+    border:1px dashed #d8d8dc;
+    border-radius:15px;
+    background:#fafafa;
+    color:var(--muted);
+    font-size:12px;
+}
+
+/* =====================================================
    TASK
 ====================================================== */
 
@@ -1711,6 +2013,14 @@ footer{
    MOBILE
 ====================================================== */
 
+@media(max-width:900px){
+
+    .class-list{
+        grid-template-columns:repeat(2,1fr);
+    }
+
+}
+
 @media(max-width:650px){
 
     .container{
@@ -2103,6 +2413,10 @@ footer{
                 Dashboard
             </a>
 
+            <a href="#kelas">
+                Kelas
+            </a>
+
             <a href="#tugas">
                 Tugas
             </a>
@@ -2442,6 +2756,100 @@ footer{
 
             </div>
 
+
+        </section>
+
+
+        <!-- =================================================
+             GABUNG KELAS
+        ================================================== -->
+
+        <section
+            class="class-section"
+            id="kelas"
+        >
+
+            <?php if ($pesan_kelas !== ''): ?>
+                <div class="class-alert <?= $tipe_pesan_kelas === 'success' ? 'success' : 'error' ?>">
+                    <?= htmlspecialchars($pesan_kelas) ?>
+                </div>
+            <?php endif; ?>
+
+            <div class="class-join-box">
+
+                <div class="class-join-head">
+                    <h2>Gabung Kelas</h2>
+                    <p>Masukkan kode kelas yang diberikan oleh guru untuk bergabung ke kelas.</p>
+                </div>
+
+                <form method="POST" class="class-join-form">
+
+                    <input
+                        type="text"
+                        name="kode_gabung"
+                        class="class-code-input"
+                        placeholder="Contoh: PPLG1-X7"
+                        maxlength="30"
+                        autocomplete="off"
+                        required
+                    >
+
+                    <button
+                        type="submit"
+                        name="gabung_kelas"
+                        class="class-join-btn"
+                    >
+                        + Gabung Kelas
+                    </button>
+
+                </form>
+
+            </div>
+
+            <h3 class="class-list-title">
+                Kelas Saya
+            </h3>
+
+            <?php if (empty($daftar_kelas)): ?>
+
+                <div class="class-empty">
+                    Kamu belum bergabung ke kelas mana pun. Masukkan kode kelas dari guru di atas.
+                </div>
+
+            <?php else: ?>
+
+                <div class="class-list">
+
+                    <?php foreach ($daftar_kelas as $kelas): ?>
+
+                        <article class="class-card">
+
+                            <div class="class-card-icon">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                                </svg>
+                            </div>
+
+                            <h3>
+                                <?= htmlspecialchars($kelas['nama_kelas']) ?>
+                            </h3>
+
+                            <p>
+                                Kelas yang kamu ikuti
+                            </p>
+
+                            <span class="class-code">
+                                🔑 <?= htmlspecialchars($kelas['kode_gabung']) ?>
+                            </span>
+
+                        </article>
+
+                    <?php endforeach; ?>
+
+                </div>
+
+            <?php endif; ?>
 
         </section>
 
