@@ -187,6 +187,323 @@ $inisial = strtoupper(
     substr(trim($nama_murid), 0, 1)
 );
 
+
+// =========================================================
+// GABUNG KELAS
+// =========================================================
+
+$pesan_kelas = $_SESSION['pesan_kelas'] ?? '';
+$tipe_pesan_kelas = $_SESSION['tipe_pesan_kelas'] ?? '';
+unset($_SESSION['pesan_kelas'], $_SESSION['tipe_pesan_kelas']);
+
+// Proses murid bergabung menggunakan kode kelas.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['gabung_kelas'])) {
+
+    $kode_gabung = strtoupper(trim($_POST['kode_gabung'] ?? ''));
+
+    if ($kode_gabung === '') {
+        $_SESSION['pesan_kelas'] = 'Masukkan kode gabung kelas terlebih dahulu.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+        header('Location: murid.php#kelas');
+        exit;
+    }
+
+    $stmt_kelas = mysqli_prepare(
+        $koneksi,
+        "SELECT id, nama_kelas, kode_gabung, guru_id
+         FROM kelas
+         WHERE kode_gabung = ?
+         LIMIT 1"
+    );
+
+    if (!$stmt_kelas) {
+        $_SESSION['pesan_kelas'] = 'Tabel kelas belum siap. Jalankan SQL tabel kelas terlebih dahulu.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+        header('Location: murid.php#kelas');
+        exit;
+    }
+
+    mysqli_stmt_bind_param($stmt_kelas, 's', $kode_gabung);
+    mysqli_stmt_execute($stmt_kelas);
+    $hasil_kelas = mysqli_stmt_get_result($stmt_kelas);
+    $kelas_ditemukan = mysqli_fetch_assoc($hasil_kelas);
+    mysqli_stmt_close($stmt_kelas);
+
+    if (!$kelas_ditemukan) {
+        $_SESSION['pesan_kelas'] = 'Kode kelas tidak ditemukan. Cek kembali kode yang diberikan guru.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+        header('Location: murid.php#kelas');
+        exit;
+    }
+
+    // Cek apakah murid sudah tergabung.
+    $stmt_cek_anggota = mysqli_prepare(
+        $koneksi,
+        "SELECT id
+         FROM anggota_kelas
+         WHERE kelas_id = ? AND user_id = ?
+         LIMIT 1"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt_cek_anggota,
+        'ii',
+        $kelas_ditemukan['id'],
+        $user_id_session
+    );
+
+    mysqli_stmt_execute($stmt_cek_anggota);
+    $hasil_cek_anggota = mysqli_stmt_get_result($stmt_cek_anggota);
+    $sudah_anggota = mysqli_fetch_assoc($hasil_cek_anggota);
+    mysqli_stmt_close($stmt_cek_anggota);
+
+    if ($sudah_anggota) {
+        $_SESSION['pesan_kelas'] = 'Kamu sudah tergabung di kelas tersebut.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+        header('Location: murid.php#kelas');
+        exit;
+    }
+
+    // Masukkan murid ke kelas.
+    $stmt_gabung = mysqli_prepare(
+        $koneksi,
+        "INSERT INTO anggota_kelas (kelas_id, user_id)
+         VALUES (?, ?)"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt_gabung,
+        'ii',
+        $kelas_ditemukan['id'],
+        $user_id_session
+    );
+
+    if (mysqli_stmt_execute($stmt_gabung)) {
+        $_SESSION['pesan_kelas'] = 'Berhasil bergabung ke kelas ' . $kelas_ditemukan['nama_kelas'] . '.';
+        $_SESSION['tipe_pesan_kelas'] = 'success';
+    } else {
+        $_SESSION['pesan_kelas'] = 'Gagal bergabung ke kelas.';
+        $_SESSION['tipe_pesan_kelas'] = 'error';
+    }
+
+    mysqli_stmt_close($stmt_gabung);
+
+    header('Location: murid.php#kelas');
+    exit;
+}
+
+// Ambil daftar kelas yang sudah diikuti murid.
+$daftar_kelas = [];
+
+$stmt_daftar_kelas = mysqli_prepare(
+    $koneksi,
+    "SELECT
+        k.id,
+        k.nama_kelas,
+        k.kode_gabung,
+        ak.joined_at
+     FROM anggota_kelas ak
+     INNER JOIN kelas k ON k.id = ak.kelas_id
+     WHERE ak.user_id = ?
+     ORDER BY ak.joined_at DESC"
+);
+
+if ($stmt_daftar_kelas) {
+    mysqli_stmt_bind_param($stmt_daftar_kelas, 'i', $user_id_session);
+    mysqli_stmt_execute($stmt_daftar_kelas);
+    $hasil_daftar_kelas = mysqli_stmt_get_result($stmt_daftar_kelas);
+
+    while ($row_kelas = mysqli_fetch_assoc($hasil_daftar_kelas)) {
+        $daftar_kelas[] = $row_kelas;
+    }
+
+    mysqli_stmt_close($stmt_daftar_kelas);
+}
+
+$total_kelas = count($daftar_kelas);
+
+
+// =========================================================
+// PENGUMPULAN TUGAS
+// =========================================================
+
+$daftar_tugas = [
+    1 => [
+        'judul' => 'Laporan Praktik Kerja Lapangan',
+        'mapel' => 'PPLG',
+        'deadline' => '4 Oktober 2026, 23.59 WIB',
+        'deskripsi' => 'Buat laporan Praktik Kerja Lapangan sesuai format yang telah diberikan oleh guru.'
+    ],
+    2 => [
+        'judul' => 'Praktik PBO — Class & Object',
+        'mapel' => 'PPLG',
+        'deadline' => '6 Oktober 2026',
+        'deskripsi' => 'Buat program sederhana menggunakan konsep Class dan Object.'
+    ],
+    3 => [
+        'judul' => 'Tugas Argumentasi Bahasa Indonesia',
+        'mapel' => 'Bahasa Indonesia',
+        'deadline' => '8 Oktober 2026',
+        'deskripsi' => 'Buat teks argumentasi sesuai ketentuan tugas dari guru.'
+    ]
+];
+
+$pengumpulan = [];
+
+// Ambil file yang sudah dikumpulkan murid ini.
+$stmt_pengumpulan = mysqli_prepare(
+    $koneksi,
+    "SELECT tugas_id, nama_file, file_path, dikumpulkan_at
+     FROM pengumpulan_tugas
+     WHERE user_id = ?"
+);
+
+if ($stmt_pengumpulan) {
+    mysqli_stmt_bind_param($stmt_pengumpulan, "i", $user_id_session);
+    mysqli_stmt_execute($stmt_pengumpulan);
+    $hasil_pengumpulan = mysqli_stmt_get_result($stmt_pengumpulan);
+
+    while ($row_pengumpulan = mysqli_fetch_assoc($hasil_pengumpulan)) {
+        $pengumpulan[(int)$row_pengumpulan['tugas_id']] = $row_pengumpulan;
+    }
+
+    mysqli_stmt_close($stmt_pengumpulan);
+}
+
+// Proses upload file.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kumpulkan_tugas'])) {
+
+    $tugas_id_upload = (int)($_POST['tugas_id'] ?? 0);
+
+    if (!isset($daftar_tugas[$tugas_id_upload])) {
+        $_SESSION['pesan_tugas'] = 'Tugas tidak ditemukan.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php#tugas');
+        exit;
+    }
+
+    if (!isset($_FILES['file_tugas']) || $_FILES['file_tugas']['error'] !== UPLOAD_ERR_OK) {
+        $_SESSION['pesan_tugas'] = 'Silakan pilih file terlebih dahulu.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+        exit;
+    }
+
+    $file_tugas = $_FILES['file_tugas'];
+    $maksimal = 10 * 1024 * 1024;
+    $ekstensi_diizinkan = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'zip', 'rar', 'jpg', 'jpeg', 'png'];
+    $nama_file_asli = $file_tugas['name'];
+    $ekstensi = strtolower(pathinfo($nama_file_asli, PATHINFO_EXTENSION));
+
+    if ($file_tugas['size'] > $maksimal) {
+        $_SESSION['pesan_tugas'] = 'Ukuran file maksimal 10 MB.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+        exit;
+    }
+
+    if (!in_array($ekstensi, $ekstensi_diizinkan, true)) {
+        $_SESSION['pesan_tugas'] = 'Format file tidak diperbolehkan. Gunakan PDF, DOC, DOCX, PPT, PPTX, ZIP, RAR, JPG, JPEG, atau PNG.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+        exit;
+    }
+
+    $folder_upload = __DIR__ . '/uploads/tugas/';
+
+    if (!is_dir($folder_upload)) {
+        mkdir($folder_upload, 0777, true);
+    }
+
+    $nama_file_baru = 'tugas_' . $user_id_session . '_' . $tugas_id_upload . '_' . time() . '.' . $ekstensi;
+    $lokasi_file = $folder_upload . $nama_file_baru;
+    $path_database = 'uploads/tugas/' . $nama_file_baru;
+
+    if (!move_uploaded_file($file_tugas['tmp_name'], $lokasi_file)) {
+        $_SESSION['pesan_tugas'] = 'File gagal diupload.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+        exit;
+    }
+
+    // Cek apakah murid sudah pernah mengumpulkan tugas ini.
+    $stmt_cek = mysqli_prepare(
+        $koneksi,
+        "SELECT id, file_path
+         FROM pengumpulan_tugas
+         WHERE tugas_id = ? AND user_id = ?
+         LIMIT 1"
+    );
+
+    $data_lama = null;
+
+    if ($stmt_cek) {
+        mysqli_stmt_bind_param($stmt_cek, 'ii', $tugas_id_upload, $user_id_session);
+        mysqli_stmt_execute($stmt_cek);
+        $hasil_cek = mysqli_stmt_get_result($stmt_cek);
+        $data_lama = mysqli_fetch_assoc($hasil_cek);
+        mysqli_stmt_close($stmt_cek);
+    }
+
+    if ($data_lama) {
+        // Hapus file lama jika ada.
+        $file_lama = __DIR__ . '/' . $data_lama['file_path'];
+        if (is_file($file_lama)) {
+            @unlink($file_lama);
+        }
+
+        $stmt_simpan = mysqli_prepare(
+            $koneksi,
+            "UPDATE pengumpulan_tugas
+             SET nama_file = ?, file_path = ?, dikumpulkan_at = CURRENT_TIMESTAMP
+             WHERE id = ?"
+        );
+
+        if ($stmt_simpan) {
+            mysqli_stmt_bind_param($stmt_simpan, 'ssi', $nama_file_asli, $path_database, $data_lama['id']);
+        }
+    } else {
+        $stmt_simpan = mysqli_prepare(
+            $koneksi,
+            "INSERT INTO pengumpulan_tugas
+             (tugas_id, user_id, nama_file, file_path)
+             VALUES (?, ?, ?, ?)"
+        );
+
+        if ($stmt_simpan) {
+            mysqli_stmt_bind_param($stmt_simpan, 'iiss', $tugas_id_upload, $user_id_session, $nama_file_asli, $path_database);
+        }
+    }
+
+    if ($stmt_simpan && mysqli_stmt_execute($stmt_simpan)) {
+        $_SESSION['pesan_tugas'] = 'Tugas berhasil dikumpulkan.';
+        $_SESSION['tipe_pesan_tugas'] = 'success';
+    } else {
+        // Jika database gagal menyimpan, hapus file yang baru diupload.
+        if (is_file($lokasi_file)) {
+            @unlink($lokasi_file);
+        }
+        $_SESSION['pesan_tugas'] = 'Tugas gagal disimpan ke database: ' . mysqli_error($koneksi);
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+    }
+
+    if ($stmt_simpan) {
+        mysqli_stmt_close($stmt_simpan);
+    }
+
+    header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+    exit;
+}
+
+$pesan_tugas = $_SESSION['pesan_tugas'] ?? '';
+$tipe_pesan_tugas = $_SESSION['tipe_pesan_tugas'] ?? '';
+unset($_SESSION['pesan_tugas'], $_SESSION['tipe_pesan_tugas']);
+
+$tugas_dibuka = isset($_GET['tugas']) ? (int)$_GET['tugas'] : 0;
+if (!isset($daftar_tugas[$tugas_dibuka])) {
+    $tugas_dibuka = 0;
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -1026,6 +1343,173 @@ h4{
 
 
 /* =====================================================
+   GABUNG KELAS
+====================================================== */
+
+.class-section{
+    margin-bottom:40px;
+}
+
+.class-join-box{
+    background:#fff;
+    border:1px solid var(--border);
+    border-left:5px solid var(--yellow);
+    border-radius:var(--radius-lg);
+    padding:25px;
+    margin-bottom:18px;
+}
+
+.class-join-head h2{
+    font-family:var(--font-h);
+    color:var(--text);
+    font-size:21px;
+    margin-bottom:5px;
+}
+
+.class-join-head p{
+    color:var(--muted);
+    font-size:13px;
+    margin-bottom:18px;
+}
+
+.class-join-form{
+    display:flex;
+    gap:14px;
+}
+
+.class-code-input{
+    flex:1;
+    min-width:0;
+    height:58px;
+    border:1px solid var(--border);
+    border-radius:14px;
+    background:#f8f8f9;
+    padding:0 18px;
+    color:var(--text);
+    font-family:var(--font-h);
+    font-size:15px;
+    outline:none;
+    text-transform:uppercase;
+}
+
+.class-code-input:focus{
+    border-color:var(--yellow);
+    background:#fff;
+    box-shadow:0 0 0 3px rgba(255,193,7,.12);
+}
+
+.class-join-btn{
+    height:58px;
+    padding:0 24px;
+    border:0;
+    border-radius:14px;
+    background:var(--yellow);
+    color:#111;
+    font-family:var(--font-h);
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+}
+
+.class-join-btn:hover{
+    background:var(--yellow-hover);
+}
+
+.class-alert{
+    padding:13px 16px;
+    border-radius:12px;
+    margin-bottom:15px;
+    font-size:12px;
+    font-weight:600;
+}
+
+.class-alert.success{
+    background:#eaf8ef;
+    color:#16713a;
+    border:1px solid #c5e8d0;
+}
+
+.class-alert.error{
+    background:#fff0f0;
+    color:#b42323;
+    border:1px solid #efc8c8;
+}
+
+.class-list-title{
+    font-family:var(--font-h);
+    color:var(--text);
+    font-size:17px;
+    margin-bottom:12px;
+}
+
+.class-list{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:16px;
+}
+
+.class-card{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:17px;
+    padding:20px;
+    transition:.2s;
+}
+
+.class-card:hover{
+    transform:translateY(-3px);
+    box-shadow:var(--shadow);
+}
+
+.class-card-icon{
+    width:44px;
+    height:44px;
+    border-radius:12px;
+    background:var(--yellow-soft);
+    color:#7a5b00;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin-bottom:13px;
+}
+
+.class-card h3{
+    font-family:var(--font-h);
+    color:var(--text);
+    font-size:16px;
+    margin-bottom:5px;
+}
+
+.class-card p{
+    color:var(--muted);
+    font-size:11px;
+    margin-bottom:13px;
+}
+
+.class-code{
+    display:block;
+    padding:10px 12px;
+    border:1px dashed #d9d9dc;
+    border-radius:11px;
+    background:#f8f8f9;
+    color:var(--text);
+    font-family:var(--font-h);
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:.04em;
+}
+
+.class-empty{
+    padding:20px;
+    border:1px dashed #d8d8dc;
+    border-radius:15px;
+    background:#fafafa;
+    color:var(--muted);
+    font-size:12px;
+}
+
+/* =====================================================
    TASK
 ====================================================== */
 
@@ -1529,6 +2013,14 @@ footer{
    MOBILE
 ====================================================== */
 
+@media(max-width:900px){
+
+    .class-list{
+        grid-template-columns:repeat(2,1fr);
+    }
+
+}
+
 @media(max-width:650px){
 
     .container{
@@ -1729,6 +2221,137 @@ footer{
 
 }
 
+
+
+/* =====================================================
+   PENGUMPULAN TUGAS
+===================================================== */
+
+.task-card-link{
+    display:block;
+    cursor:pointer;
+}
+
+.task-card-link:hover{
+    text-decoration:none;
+}
+
+.task-open{
+    color:#765600;
+    font-size:11px;
+    font-weight:700;
+    margin-top:4px;
+    display:block;
+}
+
+.submission-box{
+    margin-top:18px;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:20px;
+    padding:25px;
+    box-shadow:var(--shadow);
+}
+
+.submission-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:15px;
+    margin-bottom:20px;
+}
+
+.submission-head h3{
+    font-size:20px;
+    margin-bottom:5px;
+}
+
+.submission-head p{
+    color:var(--muted);
+    font-size:12px;
+}
+
+.submission-description{
+    color:#4b5563;
+    font-size:13px;
+    line-height:1.7;
+    background:#f8f8f9;
+    border-radius:13px;
+    padding:15px;
+    margin-bottom:18px;
+}
+
+.submission-alert{
+    border-radius:12px;
+    padding:12px 15px;
+    font-size:12px;
+    font-weight:600;
+    margin-bottom:18px;
+}
+
+.submission-alert.success{
+    background:#e8f8ee;
+    color:#16713a;
+    border:1px solid #bde5cb;
+}
+
+.submission-alert.error{
+    background:#fff0f0;
+    color:#b42318;
+    border:1px solid #efc2c0;
+}
+
+.submission-current{
+    background:#f0faf3;
+    border:1px solid #c9e8d2;
+    border-radius:13px;
+    padding:14px;
+    margin-bottom:18px;
+}
+
+.submission-current strong{
+    display:block;
+    color:#16713a;
+    font-size:12px;
+    margin-bottom:4px;
+}
+
+.submission-current span{
+    color:#47785a;
+    font-size:11px;
+}
+
+.submission-form{
+    background:#fafafa;
+    border:1px dashed #d5d5d8;
+    border-radius:14px;
+    padding:18px;
+}
+
+.submission-form label{
+    display:block;
+    font-family:var(--font-h);
+    font-size:12px;
+    font-weight:700;
+    margin-bottom:9px;
+}
+
+.submission-form input[type="file"]{
+    width:100%;
+    padding:11px;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:10px;
+    font-size:12px;
+    margin-bottom:13px;
+}
+
+.submission-note{
+    color:var(--muted);
+    font-size:10.5px;
+    margin-bottom:13px;
+}
+
 </style>
 
 </head>
@@ -1788,6 +2411,10 @@ footer{
                 class="active"
             >
                 Dashboard
+            </a>
+
+            <a href="#kelas">
+                Kelas
             </a>
 
             <a href="#tugas">
@@ -2134,6 +2761,100 @@ footer{
 
 
         <!-- =================================================
+             GABUNG KELAS
+        ================================================== -->
+
+        <section
+            class="class-section"
+            id="kelas"
+        >
+
+            <?php if ($pesan_kelas !== ''): ?>
+                <div class="class-alert <?= $tipe_pesan_kelas === 'success' ? 'success' : 'error' ?>">
+                    <?= htmlspecialchars($pesan_kelas) ?>
+                </div>
+            <?php endif; ?>
+
+            <div class="class-join-box">
+
+                <div class="class-join-head">
+                    <h2>Gabung Kelas</h2>
+                    <p>Masukkan kode kelas yang diberikan oleh guru untuk bergabung ke kelas.</p>
+                </div>
+
+                <form method="POST" class="class-join-form">
+
+                    <input
+                        type="text"
+                        name="kode_gabung"
+                        class="class-code-input"
+                        placeholder="Contoh: PPLG1-X7"
+                        maxlength="30"
+                        autocomplete="off"
+                        required
+                    >
+
+                    <button
+                        type="submit"
+                        name="gabung_kelas"
+                        class="class-join-btn"
+                    >
+                        + Gabung Kelas
+                    </button>
+
+                </form>
+
+            </div>
+
+            <h3 class="class-list-title">
+                Kelas Saya
+            </h3>
+
+            <?php if (empty($daftar_kelas)): ?>
+
+                <div class="class-empty">
+                    Kamu belum bergabung ke kelas mana pun. Masukkan kode kelas dari guru di atas.
+                </div>
+
+            <?php else: ?>
+
+                <div class="class-list">
+
+                    <?php foreach ($daftar_kelas as $kelas): ?>
+
+                        <article class="class-card">
+
+                            <div class="class-card-icon">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                                </svg>
+                            </div>
+
+                            <h3>
+                                <?= htmlspecialchars($kelas['nama_kelas']) ?>
+                            </h3>
+
+                            <p>
+                                Kelas yang kamu ikuti
+                            </p>
+
+                            <span class="class-code">
+                                🔑 <?= htmlspecialchars($kelas['kode_gabung']) ?>
+                            </span>
+
+                        </article>
+
+                    <?php endforeach; ?>
+
+                </div>
+
+            <?php endif; ?>
+
+        </section>
+
+
+        <!-- =================================================
              TUGAS + AKSES CEPAT
         ================================================== -->
 
@@ -2172,155 +2893,61 @@ footer{
                 <div class="task-list">
 
 
-                    <!-- TASK 1 -->
+                    <?php foreach ($daftar_tugas as $id_tugas => $data_tugas): ?>
 
-                    <article class="task-card">
+                        <?php
+                            $sudah_kumpul = isset($pengumpulan[$id_tugas]);
+                        ?>
 
-                        <div class="task-icon">
+                        <a
+                            href="?tugas=<?= $id_tugas ?>#pengumpulan"
+                            class="task-card-link"
+                        >
+                            <article class="task-card">
 
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
+                                <div class="task-icon">
 
-                                <path
-                                    d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"
-                                />
+                                    <svg
+                                        width="22"
+                                        height="22"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                    >
+                                        <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/>
+                                        <path d="M14 3v5h5"/>
+                                        <path d="M9 13h6"/>
+                                        <path d="M9 17h4"/>
+                                    </svg>
 
-                                <path d="M14 3v5h5"/>
+                                </div>
 
-                                <path d="M9 13h6"/>
+                                <div class="task-content">
 
-                                <path d="M9 17h4"/>
+                                    <h3>
+                                        <?= htmlspecialchars($data_tugas['judul']) ?>
+                                    </h3>
 
-                            </svg>
+                                    <p>
+                                        <?= htmlspecialchars($data_tugas['mapel']) ?>
+                                        • Deadline <?= htmlspecialchars($data_tugas['deadline']) ?>
+                                    </p>
 
-                        </div>
+                                    <span class="task-open">
+                                        <?= $sudah_kumpul ? 'Lihat pengumpulan →' : 'Buka dan kumpulkan →' ?>
+                                    </span>
 
+                                </div>
 
-                        <div class="task-content">
+                                <span class="task-status <?= $sudah_kumpul ? 'status-done' : 'status-wait' ?>">
+                                    <?= $sudah_kumpul ? 'Sudah Kumpul' : 'Belum Kumpul' ?>
+                                </span>
 
-                            <h3>
-                                Laporan Praktik Kerja Lapangan
-                            </h3>
+                            </article>
+                        </a>
 
-                            <p>
-                                PPLG • Deadline 4 Oktober 2026, 23.59 WIB
-                            </p>
-
-                        </div>
-
-
-                        <span class="task-status status-wait">
-                            Belum Kumpul
-                        </span>
-
-                    </article>
-
-
-                    <!-- TASK 2 -->
-
-                    <article class="task-card">
-
-                        <div class="task-icon">
-
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-
-                                <path
-                                    d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"
-                                />
-
-                                <path d="M14 3v5h5"/>
-
-                                <path d="M9 13h6"/>
-
-                                <path d="M9 17h4"/>
-
-                            </svg>
-
-                        </div>
-
-
-                        <div class="task-content">
-
-                            <h3>
-                                Praktik PBO — Class & Object
-                            </h3>
-
-                            <p>
-                                PPLG • Deadline 6 Oktober 2026
-                            </p>
-
-                        </div>
-
-
-                        <span class="task-status status-done">
-                            Sudah Kumpul
-                        </span>
-
-                    </article>
-
-
-                    <!-- TASK 3 -->
-
-                    <article class="task-card">
-
-                        <div class="task-icon">
-
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-
-                                <path
-                                    d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"
-                                />
-
-                                <path d="M14 3v5h5"/>
-
-                                <path d="M9 13h6"/>
-
-                                <path d="M9 17h4"/>
-
-                            </svg>
-
-                        </div>
-
-
-                        <div class="task-content">
-
-                            <h3>
-                                Tugas Argumentasi Bahasa Indonesia
-                            </h3>
-
-                            <p>
-                                Bahasa Indonesia • Deadline 8 Oktober 2026
-                            </p>
-
-                        </div>
-
-
-                        <span class="task-status status-wait">
-                            Belum Kumpul
-                        </span>
-
-                    </article>
-
+                    <?php endforeach; ?>
 
                 </div>
 
@@ -2464,6 +3091,92 @@ footer{
 
         </div>
 
+
+
+        <?php if ($tugas_dibuka): ?>
+
+            <!-- =================================================
+                 PENGUMPULAN TUGAS
+            ================================================== -->
+
+            <section class="submission-box" id="pengumpulan">
+
+                <div class="submission-head">
+                    <div>
+                        <h3>
+                            <?= htmlspecialchars($daftar_tugas[$tugas_dibuka]['judul']) ?>
+                        </h3>
+                        <p>
+                            <?= htmlspecialchars($daftar_tugas[$tugas_dibuka]['mapel']) ?>
+                            • Deadline <?= htmlspecialchars($daftar_tugas[$tugas_dibuka]['deadline']) ?>
+                        </p>
+                    </div>
+
+                    <a href="murid.php#tugas" class="btn btn-outline">
+                        Tutup
+                    </a>
+                </div>
+
+                <?php if ($pesan_tugas !== ''): ?>
+                    <div class="submission-alert <?= $tipe_pesan_tugas === 'success' ? 'success' : 'error' ?>">
+                        <?= htmlspecialchars($pesan_tugas) ?>
+                    </div>
+                <?php endif; ?>
+
+                <div class="submission-description">
+                    <?= nl2br(htmlspecialchars($daftar_tugas[$tugas_dibuka]['deskripsi'])) ?>
+                </div>
+
+                <?php if (isset($pengumpulan[$tugas_dibuka])): ?>
+                    <div class="submission-current">
+                        <strong>✓ Tugas sudah dikumpulkan</strong>
+                        <span>
+                            File: <?= htmlspecialchars($pengumpulan[$tugas_dibuka]['nama_file']) ?>
+                            • <?= htmlspecialchars($pengumpulan[$tugas_dibuka]['dikumpulkan_at']) ?>
+                        </span>
+                    </div>
+                <?php endif; ?>
+
+                <form
+                    method="POST"
+                    enctype="multipart/form-data"
+                    class="submission-form"
+                >
+
+                    <input
+                        type="hidden"
+                        name="tugas_id"
+                        value="<?= $tugas_dibuka ?>"
+                    >
+
+                    <label for="file_tugas">
+                        <?= isset($pengumpulan[$tugas_dibuka]) ? 'Ganti File Tugas' : 'Pilih File Tugas' ?>
+                    </label>
+
+                    <input
+                        type="file"
+                        id="file_tugas"
+                        name="file_tugas"
+                        required
+                    >
+
+                    <div class="submission-note">
+                        Maksimal 10 MB • PDF, DOC, DOCX, PPT, PPTX, ZIP, RAR, JPG, JPEG, PNG.
+                    </div>
+
+                    <button
+                        type="submit"
+                        name="kumpulkan_tugas"
+                        class="btn btn-yellow"
+                    >
+                        <?= isset($pengumpulan[$tugas_dibuka]) ? 'Kumpulkan Ulang' : 'Kumpulkan Tugas' ?>
+                    </button>
+
+                </form>
+
+            </section>
+
+        <?php endif; ?>
 
         <!-- =================================================
              QUIZ
