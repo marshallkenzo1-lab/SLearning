@@ -26,10 +26,21 @@ if (!$koneksi) {
 // CEK LOGIN
 // =========================================================
 
-// Ambil identitas user dari session.
-// Dibuat fleksibel supaya tetap bisa bekerja
-// jika login.php kamu menyimpan username / email / nama.
+// Wajib sudah login, kalau belum lempar ke login.php
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
 
+// Kalau yang login guru, arahkan ke dashboard guru
+if (($_SESSION['jenis'] ?? '') === 'guru') {
+    header("Location: guru.php");
+    exit;
+}
+
+// Ambil identitas user dari session.
+
+$user_id_session  = $_SESSION['user_id'] ?? '';
 $username_session = $_SESSION['username'] ?? '';
 $email_session    = $_SESSION['email'] ?? '';
 $nama_session     = $_SESSION['nama'] ?? '';
@@ -40,6 +51,33 @@ $nama_session     = $_SESSION['nama'] ?? '';
 // =========================================================
 
 $user = null;
+
+
+// Prioritas 0: user_id (paling akurat dari login.php)
+if (!empty($user_id_session)) {
+
+    $stmt = mysqli_prepare(
+        $koneksi,
+        "SELECT id, nama, username, email, jenis, role, created_at
+         FROM users
+         WHERE id = ?
+         LIMIT 1"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt,
+        "i",
+        $user_id_session
+    );
+
+    mysqli_stmt_execute($stmt);
+
+    $result = mysqli_stmt_get_result($stmt);
+
+    $user = mysqli_fetch_assoc($result);
+
+    mysqli_stmt_close($stmt);
+}
 
 
 // Prioritas 1: username
@@ -137,12 +175,9 @@ if ($user) {
 
 } else {
 
-    // Fallback kalau session belum tersambung
-    $nama_murid = 'Andhini';
-    $username   = 'andhini';
-    $email      = 'Belum tersedia';
-    $jenis      = 'murid';
-    $role       = 'user';
+    // Session ada tapi user tidak ditemukan di DB -> paksa logout
+    header("Location: logout.php");
+    exit;
 }
 
 
@@ -792,6 +827,40 @@ h4{
 .btn-outline:hover{
 
     border-color:#c9c9ce;
+}
+
+
+.btn-logout{
+
+    background:#fff;
+
+    color:#b42318;
+
+    border-color:var(--border);
+
+    padding:10px 16px;
+}
+
+
+.btn-logout:hover{
+
+    background:#fef2f2;
+
+    border-color:#f5c2c0;
+
+    color:#912018;
+}
+
+
+.nav-right{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:12px;
+
+    margin-left:auto;
 }
 
 
@@ -1486,6 +1555,20 @@ footer{
         display:none;
     }
 
+    .profile{
+
+        border-left:none;
+
+        padding-left:0;
+    }
+
+    .btn-logout{
+
+        padding:10px 12px;
+
+        font-size:12px;
+    }
+
     .dashboard-content{
 
         padding:
@@ -1761,6 +1844,39 @@ footer{
                 </span>
 
             </div>
+
+        </a>
+
+
+        <!-- LOGOUT -->
+
+        <a
+            href="logout.php"
+            class="btn btn-logout"
+            onclick="return confirm('Yakin ingin keluar?')"
+            title="Keluar dari SLearning"
+        >
+
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            >
+
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+
+                <polyline points="16 17 21 12 16 7"/>
+
+                <line x1="21" y1="12" x2="9" y2="12"/>
+
+            </svg>
+
+            Keluar
 
         </a>
 
