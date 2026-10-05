@@ -1,52 +1,245 @@
 <?php
+// =========================================================
 // SLearning - SKAJU Learning | Dashboard Murid
+// =========================================================
+
 session_start();
 
-/*
-    Jika sistem login sudah digunakan,
-    aktifkan bagian ini:
 
-    if (!isset($_SESSION['login'])) {
-        header("Location: login.php");
-        exit;
-    }
-*/
+// =========================================================
+// KONEKSI DATABASE
+// =========================================================
 
-$nama_murid = $_SESSION['nama'] ?? 'Andhini';
-$nis = $_SESSION['nis'] ?? 'NIS 20260001';
+$koneksi = mysqli_connect(
+    "localhost",
+    "root",
+    "",
+    "slearning_db"
+);
+
+if (!$koneksi) {
+    die("Koneksi database gagal: " . mysqli_connect_error());
+}
+
+
+// =========================================================
+// CEK LOGIN
+// =========================================================
+
+// Wajib sudah login, kalau belum lempar ke login.php
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
+
+// Kalau yang login guru, arahkan ke dashboard guru
+if (($_SESSION['jenis'] ?? '') === 'guru') {
+    header("Location: guru.php");
+    exit;
+}
+
+// Ambil identitas user dari session.
+
+$user_id_session  = $_SESSION['user_id'] ?? '';
+$username_session = $_SESSION['username'] ?? '';
+$email_session    = $_SESSION['email'] ?? '';
+$nama_session     = $_SESSION['nama'] ?? '';
+
+
+// =========================================================
+// AMBIL DATA USER
+// =========================================================
+
+$user = null;
+
+
+// Prioritas 0: user_id (paling akurat dari login.php)
+if (!empty($user_id_session)) {
+
+    $stmt = mysqli_prepare(
+        $koneksi,
+        "SELECT id, nama, username, email, jenis, role, created_at
+         FROM users
+         WHERE id = ?
+         LIMIT 1"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt,
+        "i",
+        $user_id_session
+    );
+
+    mysqli_stmt_execute($stmt);
+
+    $result = mysqli_stmt_get_result($stmt);
+
+    $user = mysqli_fetch_assoc($result);
+
+    mysqli_stmt_close($stmt);
+}
+
+
+// Prioritas 1: username
+if (!empty($username_session)) {
+
+    $stmt = mysqli_prepare(
+        $koneksi,
+        "SELECT id, nama, username, email, jenis, role, created_at
+         FROM users
+         WHERE username = ?
+         LIMIT 1"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt,
+        "s",
+        $username_session
+    );
+
+    mysqli_stmt_execute($stmt);
+
+    $result = mysqli_stmt_get_result($stmt);
+
+    $user = mysqli_fetch_assoc($result);
+
+    mysqli_stmt_close($stmt);
+}
+
+
+// Prioritas 2: email
+if (!$user && !empty($email_session)) {
+
+    $stmt = mysqli_prepare(
+        $koneksi,
+        "SELECT id, nama, username, email, jenis, role, created_at
+         FROM users
+         WHERE email = ?
+         LIMIT 1"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt,
+        "s",
+        $email_session
+    );
+
+    mysqli_stmt_execute($stmt);
+
+    $result = mysqli_stmt_get_result($stmt);
+
+    $user = mysqli_fetch_assoc($result);
+
+    mysqli_stmt_close($stmt);
+}
+
+
+// Prioritas 3: nama
+if (!$user && !empty($nama_session)) {
+
+    $stmt = mysqli_prepare(
+        $koneksi,
+        "SELECT id, nama, username, email, jenis, role, created_at
+         FROM users
+         WHERE nama = ?
+         LIMIT 1"
+    );
+
+    mysqli_stmt_bind_param(
+        $stmt,
+        "s",
+        $nama_session
+    );
+
+    mysqli_stmt_execute($stmt);
+
+    $result = mysqli_stmt_get_result($stmt);
+
+    $user = mysqli_fetch_assoc($result);
+
+    mysqli_stmt_close($stmt);
+}
+
+
+// =========================================================
+// JIKA DATA USER DITEMUKAN
+// =========================================================
+
+if ($user) {
+
+    $nama_murid = $user['nama'];
+    $username   = $user['username'];
+    $email      = $user['email'];
+    $jenis      = $user['jenis'];
+    $role       = $user['role'];
+
+} else {
+
+    // Session ada tapi user tidak ditemukan di DB -> paksa logout
+    header("Location: logout.php");
+    exit;
+}
+
+
+// =========================================================
+// INISIAL AVATAR
+// =========================================================
+
+$inisial = strtoupper(
+    substr(trim($nama_murid), 0, 1)
+);
+
 ?>
 
 <!DOCTYPE html>
+
 <html lang="id">
 
 <head>
 
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<meta name="description" content="Dashboard murid SLearning SMK Negeri 7 Batam">
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
 
-<title>Dashboard Murid — SLearning</title>
+<meta
+    name="description"
+    content="Dashboard Murid SLearning SMK Negeri 7 Batam"
+>
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<title>
+    Dashboard Murid — SLearning
+</title>
+
+
+<!-- =====================================================
+     GOOGLE FONT
+====================================================== -->
+
+<link
+    rel="preconnect"
+    href="https://fonts.googleapis.com"
+>
+
+<link
+    rel="preconnect"
+    href="https://fonts.gstatic.com"
+    crossorigin
+>
 
 <link
     href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Open+Sans:wght@400;500;600;700&display=swap"
     rel="stylesheet"
 >
 
-<link
-    rel="icon"
-    type="image/png"
-    href="assets/img/logo-smkn7.png"
->
+
+<!-- =====================================================
+     STYLE
+====================================================== -->
 
 <style>
-
-/* =========================================================
-   ROOT
-========================================================= */
 
 :root{
 
@@ -72,16 +265,13 @@ $nis = $_SESSION['nis'] ?? 'NIS 20260001';
 
     --max:1200px;
 
-    --shadow:0 16px 40px rgba(0,0,0,.08);
+    --shadow:
+        0 16px 40px rgba(0,0,0,.08);
 
     --font-h:'Poppins',sans-serif;
     --font-b:'Open Sans',sans-serif;
 }
 
-
-/* =========================================================
-   RESET
-========================================================= */
 
 *{
     margin:0;
@@ -89,68 +279,97 @@ $nis = $_SESSION['nis'] ?? 'NIS 20260001';
     box-sizing:border-box;
 }
 
+
 html{
     scroll-behavior:smooth;
 }
 
+
 body{
+
     font-family:var(--font-b);
+
     font-size:16px;
+
     line-height:1.6;
+
     color:var(--text);
+
     background:var(--bg);
+
     -webkit-font-smoothing:antialiased;
+
     overflow-x:hidden;
 }
+
 
 a{
     text-decoration:none;
     color:inherit;
 }
 
+
 button{
     font-family:inherit;
 }
+
 
 h1,
 h2,
 h3,
 h4{
+
     font-family:var(--font-h);
+
     line-height:1.15;
 }
 
+
 .container{
+
     max-width:var(--max);
+
     margin:0 auto;
+
     padding:0 24px;
 }
 
 
-/* =========================================================
+/* =====================================================
    NAVBAR
-========================================================= */
+====================================================== */
 
 .navbar{
+
     position:sticky;
+
     top:0;
+
     z-index:50;
 
-    background:rgba(255,255,255,.95);
+    background:
+        rgba(255,255,255,.96);
+
     backdrop-filter:blur(12px);
 
-    border-bottom:1px solid var(--border);
+    border-bottom:
+        1px solid var(--border);
 
-    box-shadow:0 8px 30px rgba(0,0,0,.07);
+    box-shadow:
+        0 8px 30px rgba(0,0,0,.07);
 }
 
+
 .nav-inner{
+
     max-width:var(--max);
+
     margin:0 auto;
 
     padding:14px 24px;
 
     display:flex;
+
     align-items:center;
 
     gap:25px;
@@ -160,62 +379,84 @@ h4{
 /* BRAND */
 
 .brand{
+
     display:flex;
+
     align-items:center;
+
     gap:12px;
 
     min-height:44px;
 }
 
+
 .brand img{
+
     width:44px;
+
     height:44px;
 
     object-fit:contain;
 
     background:#fff;
+
     border-radius:12px;
 
     padding:4px;
 
-    border:1px solid var(--border);
+    border:
+        1px solid var(--border);
 }
 
+
 .brand-text{
+
     line-height:1.2;
 }
 
+
 .brand-text strong{
+
     font-family:var(--font-h);
+
     font-size:17px;
 
     display:block;
 }
 
+
 .brand-text span{
+
     display:block;
 
     font-size:11.5px;
+
     color:var(--muted);
 
     letter-spacing:.04em;
+
     text-transform:uppercase;
 }
 
 
-/* NAVIGATION */
+/* NAV LINKS */
 
 .nav-links{
+
     display:flex;
+
     gap:5px;
 
     margin-left:auto;
 }
 
+
 .nav-links a{
+
     color:#4b5563;
 
     font-size:14px;
+
     font-weight:600;
 
     padding:10px 14px;
@@ -227,106 +468,137 @@ h4{
     min-height:44px;
 
     display:inline-flex;
+
     align-items:center;
 }
 
+
 .nav-links a:hover,
 .nav-links a.active{
+
     color:var(--text);
+
     background:var(--yellow-soft);
 }
 
 
-/* PROFILE NAVBAR */
+/* PROFILE */
 
 .profile{
+
     display:flex;
+
     align-items:center;
 
     gap:10px;
 
     padding-left:14px;
 
-    border-left:1px solid var(--border);
+    border-left:
+        1px solid var(--border);
 
     min-height:44px;
 }
 
+
 .avatar{
+
     width:40px;
+
     height:40px;
 
     border-radius:50%;
 
     background:var(--dark);
+
     color:var(--yellow);
 
     display:flex;
+
     align-items:center;
+
     justify-content:center;
 
     font-family:var(--font-h);
+
     font-weight:800;
+
     font-size:17px;
 }
 
+
 .profile-info{
+
     line-height:1.2;
 }
 
+
 .profile-info strong{
+
     display:block;
 
     font-family:var(--font-h);
+
     font-size:13px;
 }
 
+
 .profile-info span{
+
     display:block;
 
     color:var(--muted);
+
     font-size:11px;
 
     margin-top:3px;
 }
 
 
-/* =========================================================
-   DASHBOARD BACKGROUND
-========================================================= */
+/* =====================================================
+   DASHBOARD
+====================================================== */
 
 .dashboard{
-    min-height:calc(100vh - 73px);
+
+    min-height:
+        calc(100vh - 73px);
 
     position:relative;
 
     background:
+
         radial-gradient(
             800px 380px at 85% 0%,
             rgba(255,193,7,.20),
             transparent
         ),
+
         var(--bg);
 
     overflow:hidden;
 }
 
 
-/* GRID */
+/* GRID BACKGROUND */
 
 .dashboard::before{
+
     content:"";
 
     position:absolute;
+
     inset:0;
 
     pointer-events:none;
 
     background-image:
+
         linear-gradient(
             #eeeeef 1px,
             transparent 1px
         ),
+
         linear-gradient(
             90deg,
             #eeeeef 1px,
@@ -350,33 +622,44 @@ h4{
         );
 }
 
+
 .dashboard-content{
+
     position:relative;
+
     z-index:1;
 
-    padding:58px 0 75px;
+    padding:
+        58px 0
+        75px;
 }
 
 
-/* =========================================================
+/* =====================================================
    WELCOME
-========================================================= */
+====================================================== */
 
 .welcome{
+
     background:var(--dark);
+
     color:#fff;
 
     border-radius:30px;
 
-    padding:48px 54px;
+    padding:
+        48px 54px;
 
     display:flex;
+
     align-items:center;
+
     justify-content:space-between;
 
     gap:35px;
 
     position:relative;
+
     overflow:hidden;
 
     margin-bottom:32px;
@@ -385,15 +668,19 @@ h4{
         0 20px 50px rgba(0,0,0,.12);
 }
 
+
 .welcome::after{
+
     content:"";
 
     position:absolute;
 
     width:380px;
+
     height:380px;
 
     right:-100px;
+
     top:-170px;
 
     background:
@@ -404,29 +691,40 @@ h4{
         );
 }
 
+
 .welcome-text{
+
     position:relative;
+
     z-index:2;
 }
 
+
 .welcome small{
+
     display:block;
 
     color:var(--yellow);
 
     font-family:var(--font-h);
+
     font-weight:800;
 
     font-size:13px;
 
     letter-spacing:.08em;
+
     text-transform:uppercase;
 
     margin-bottom:10px;
 }
 
+
 .welcome h1{
-    font-size:clamp(30px,4vw,48px);
+
+    font-size:
+        clamp(30px,4vw,48px);
+
     font-weight:800;
 
     margin-bottom:12px;
@@ -434,40 +732,51 @@ h4{
     color:#fff;
 }
 
+
 .welcome p{
+
     color:#b9b9bf;
+
     font-size:15px;
 }
 
+
 .welcome-button{
+
     position:relative;
+
     z-index:2;
 
     flex-shrink:0;
 }
 
 
-/* =========================================================
+/* =====================================================
    BUTTON
-========================================================= */
+====================================================== */
 
 .btn{
+
     display:inline-flex;
 
     align-items:center;
+
     justify-content:center;
 
     gap:8px;
 
     min-height:44px;
 
-    padding:11px 19px;
+    padding:
+        11px 19px;
 
     border-radius:12px;
 
-    border:1px solid transparent;
+    border:
+        1px solid transparent;
 
     font-family:var(--font-h);
+
     font-weight:600;
 
     font-size:13px;
@@ -480,23 +789,33 @@ h4{
         background .2s;
 }
 
+
 .btn:hover{
-    transform:translateY(-2px);
+
+    transform:
+        translateY(-2px);
 }
 
+
 .btn-yellow{
+
     background:var(--yellow);
+
     color:#171300;
 }
 
+
 .btn-yellow:hover{
+
     background:var(--yellow-hover);
 
     box-shadow:
         0 8px 22px rgba(255,193,7,.3);
 }
 
+
 .btn-outline{
+
     background:#fff;
 
     color:var(--text);
@@ -504,16 +823,53 @@ h4{
     border-color:var(--border);
 }
 
+
 .btn-outline:hover{
+
     border-color:#c9c9ce;
 }
 
 
-/* =========================================================
+.btn-logout{
+
+    background:#fff;
+
+    color:#b42318;
+
+    border-color:var(--border);
+
+    padding:10px 16px;
+}
+
+
+.btn-logout:hover{
+
+    background:#fef2f2;
+
+    border-color:#f5c2c0;
+
+    color:#912018;
+}
+
+
+.nav-right{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:12px;
+
+    margin-left:auto;
+}
+
+
+/* =====================================================
    STATISTICS
-========================================================= */
+====================================================== */
 
 .stats{
+
     width:100%;
 
     display:grid;
@@ -526,19 +882,24 @@ h4{
     margin-bottom:42px;
 }
 
+
 .stat-card{
+
     width:100%;
+
     min-width:0;
 
     background:#fff;
 
-    border:1px solid var(--border);
+    border:
+        1px solid var(--border);
 
     border-radius:18px;
 
     padding:22px;
 
     display:flex;
+
     align-items:center;
 
     gap:15px;
@@ -549,16 +910,23 @@ h4{
         border-color .2s;
 }
 
-.stat-card:hover{
-    transform:translateY(-3px);
 
-    box-shadow:var(--shadow);
+.stat-card:hover{
+
+    transform:
+        translateY(-3px);
+
+    box-shadow:
+        var(--shadow);
 
     border-color:#d8d8dc;
 }
 
+
 .stat-icon{
+
     width:48px;
+
     height:48px;
 
     min-width:48px;
@@ -566,27 +934,37 @@ h4{
     border-radius:14px;
 
     background:var(--yellow-soft);
+
     color:#8a6500;
 
     display:flex;
+
     align-items:center;
+
     justify-content:center;
 }
 
+
 .stat-content{
+
     min-width:0;
 }
 
+
 .stat-number{
+
     font-family:var(--font-h);
 
     font-size:26px;
+
     font-weight:800;
 
     line-height:1;
 }
 
+
 .stat-label{
+
     color:var(--muted);
 
     font-size:12.5px;
@@ -597,14 +975,16 @@ h4{
 }
 
 
-/* =========================================================
+/* =====================================================
    SECTION HEADER
-========================================================= */
+====================================================== */
 
 .section-head{
+
     display:flex;
 
     justify-content:space-between;
+
     align-items:flex-end;
 
     gap:15px;
@@ -612,24 +992,29 @@ h4{
     margin-bottom:18px;
 }
 
+
 .section-head h2{
+
     font-size:24px;
 
     margin-bottom:5px;
 }
 
+
 .section-head p{
+
     color:var(--muted);
 
     font-size:13px;
 }
 
 
-/* =========================================================
+/* =====================================================
    MAIN GRID
-========================================================= */
+====================================================== */
 
 .main-grid{
+
     display:grid;
 
     grid-template-columns:
@@ -642,25 +1027,31 @@ h4{
 }
 
 
-/* =========================================================
+/* =====================================================
    TASK
-========================================================= */
+====================================================== */
 
 .task-list{
+
     display:grid;
+
     gap:12px;
 }
 
+
 .task-card{
+
     background:#fff;
 
-    border:1px solid var(--border);
+    border:
+        1px solid var(--border);
 
     border-radius:17px;
 
     padding:19px;
 
     display:flex;
+
     align-items:center;
 
     gap:15px;
@@ -670,13 +1061,21 @@ h4{
         box-shadow .2s;
 }
 
+
 .task-card:hover{
-    transform:translateY(-3px);
-    box-shadow:var(--shadow);
+
+    transform:
+        translateY(-3px);
+
+    box-shadow:
+        var(--shadow);
 }
 
+
 .task-icon{
+
     width:48px;
+
     height:48px;
 
     min-width:48px;
@@ -684,61 +1083,78 @@ h4{
     border-radius:13px;
 
     background:var(--yellow-soft);
+
     color:#7a5b00;
 
     display:flex;
+
     align-items:center;
+
     justify-content:center;
 }
 
+
 .task-content{
+
     flex:1;
+
     min-width:0;
 }
 
+
 .task-content h3{
+
     font-size:14px;
+
     margin-bottom:4px;
 }
 
+
 .task-content p{
+
     color:var(--muted);
+
     font-size:12px;
 }
 
+
 .task-status{
+
     font-size:11px;
 
     font-weight:700;
 
-    padding:6px 11px;
+    padding:
+        6px 11px;
 
     border-radius:999px;
 
     white-space:nowrap;
 }
 
+
 .status-wait{
+
     background:var(--yellow-soft);
+
     color:#8a6500;
 }
 
+
 .status-done{
+
     background:#e7f7ee;
+
     color:#15803d;
 }
 
-.status-late{
-    background:#feecec;
-    color:#dc2626;
-}
 
-
-/* =========================================================
+/* =====================================================
    QUICK ACCESS
-========================================================= */
+====================================================== */
 
 .quick-card{
+
     background:var(--dark);
 
     color:#fff;
@@ -750,12 +1166,17 @@ h4{
     min-height:100%;
 }
 
+
 .quick-card h3{
+
     font-size:19px;
+
     margin-bottom:5px;
 }
 
+
 .quick-card > p{
+
     color:#a1a1aa;
 
     font-size:12px;
@@ -763,21 +1184,28 @@ h4{
     margin-bottom:18px;
 }
 
+
 .quick-menu{
+
     display:grid;
+
     gap:9px;
 }
 
+
 .quick-menu a{
+
     background:#1c1c1f;
 
-    border:1px solid #2a2a2e;
+    border:
+        1px solid #2a2a2e;
 
     padding:13px;
 
     border-radius:12px;
 
     display:flex;
+
     align-items:center;
 
     gap:11px;
@@ -787,31 +1215,40 @@ h4{
     transition:.2s;
 }
 
+
 .quick-menu a:hover{
+
     background:#242427;
 
     border-color:#414146;
 
-    transform:translateX(3px);
+    transform:
+        translateX(3px);
 }
 
+
 .quick-menu svg{
+
     color:var(--yellow);
 
     flex-shrink:0;
 }
 
 
-/* =========================================================
+/* =====================================================
    QUIZ
-========================================================= */
+====================================================== */
 
 .quiz-section{
+
     margin-top:5px;
+
     margin-bottom:42px;
 }
 
+
 .quiz-grid{
+
     display:grid;
 
     grid-template-columns:
@@ -820,10 +1257,13 @@ h4{
     gap:16px;
 }
 
+
 .quiz-card{
+
     background:#fff;
 
-    border:1px solid var(--border);
+    border:
+        1px solid var(--border);
 
     border-radius:17px;
 
@@ -834,15 +1274,23 @@ h4{
         box-shadow .2s;
 }
 
+
 .quiz-card:hover{
-    transform:translateY(-4px);
-    box-shadow:var(--shadow);
+
+    transform:
+        translateY(-4px);
+
+    box-shadow:
+        var(--shadow);
 }
 
+
 .quiz-top{
+
     display:flex;
 
     align-items:center;
+
     justify-content:space-between;
 
     gap:10px;
@@ -850,7 +1298,9 @@ h4{
     margin-bottom:17px;
 }
 
+
 .quiz-label{
+
     font-size:10px;
 
     font-weight:800;
@@ -859,24 +1309,31 @@ h4{
 
     color:var(--yellow);
 
-    padding:6px 9px;
+    padding:
+        6px 9px;
 
     border-radius:7px;
 }
 
+
 .quiz-time{
+
     color:var(--muted);
 
     font-size:11px;
 }
 
+
 .quiz-card h3{
+
     font-size:15px;
 
     margin-bottom:6px;
 }
 
+
 .quiz-card p{
+
     color:var(--muted);
 
     font-size:12px;
@@ -886,7 +1343,9 @@ h4{
     margin-bottom:18px;
 }
 
+
 .quiz-bottom{
+
     display:flex;
 
     align-items:center;
@@ -896,13 +1355,17 @@ h4{
     gap:10px;
 }
 
+
 .quiz-bottom span{
+
     color:var(--muted);
 
     font-size:11px;
 }
 
+
 .quiz-bottom a{
+
     color:#765600;
 
     font-size:12px;
@@ -910,47 +1373,56 @@ h4{
     font-weight:700;
 }
 
-.quiz-bottom a:hover{
-    color:#000;
-}
 
-
-/* =========================================================
+/* =====================================================
    ACTIVITY
-========================================================= */
+====================================================== */
 
 .activity{
+
     margin-top:5px;
 }
 
+
 .activity-card{
+
     background:#fff;
 
-    border:1px solid var(--border);
+    border:
+        1px solid var(--border);
 
     border-radius:17px;
 
     overflow:hidden;
 }
 
+
 .activity-item{
+
     display:flex;
 
     align-items:center;
 
     gap:14px;
 
-    padding:17px 20px;
+    padding:
+        17px 20px;
 
-    border-bottom:1px solid var(--border);
+    border-bottom:
+        1px solid var(--border);
 }
 
+
 .activity-item:last-child{
+
     border-bottom:none;
 }
 
+
 .activity-dot{
+
     width:9px;
+
     height:9px;
 
     min-width:9px;
@@ -960,7 +1432,9 @@ h4{
     border-radius:50%;
 }
 
+
 .activity-item strong{
+
     display:block;
 
     font-size:13px;
@@ -968,7 +1442,9 @@ h4{
     margin-bottom:2px;
 }
 
+
 .activity-item span{
+
     display:block;
 
     color:var(--muted);
@@ -977,21 +1453,25 @@ h4{
 }
 
 
-/* =========================================================
+/* =====================================================
    FOOTER
-========================================================= */
+====================================================== */
 
 footer{
+
     background:#08080a;
 
     color:#a1a1aa;
 
     padding:25px 0;
 
-    border-top:4px solid var(--yellow);
+    border-top:
+        4px solid var(--yellow);
 }
 
+
 .footer-inner{
+
     display:flex;
 
     align-items:center;
@@ -1005,14 +1485,16 @@ footer{
     font-size:12px;
 }
 
+
 .footer-inner strong{
+
     color:#fff;
 }
 
 
-/* =========================================================
+/* =====================================================
    TABLET
-========================================================= */
+====================================================== */
 
 @media(max-width:1000px){
 
@@ -1021,19 +1503,23 @@ footer{
     }
 
     .stats{
+
         grid-template-columns:
             repeat(2,minmax(0,1fr));
     }
 
     .main-grid{
+
         grid-template-columns:1fr;
     }
 
     .quick-card{
+
         min-height:auto;
     }
 
     .quiz-grid{
+
         grid-template-columns:
             repeat(2,minmax(0,1fr));
     }
@@ -1041,34 +1527,59 @@ footer{
 }
 
 
-/* =========================================================
+/* =====================================================
    MOBILE
-========================================================= */
+====================================================== */
 
 @media(max-width:650px){
 
     .container{
-        padding:0 16px;
+
+        padding:
+            0 16px;
     }
 
     .nav-inner{
-        padding:12px 16px;
+
+        padding:
+            12px 16px;
     }
 
     .brand-text span{
+
         font-size:9.5px;
     }
 
     .profile-info{
+
         display:none;
     }
 
+    .profile{
+
+        border-left:none;
+
+        padding-left:0;
+    }
+
+    .btn-logout{
+
+        padding:10px 12px;
+
+        font-size:12px;
+    }
+
     .dashboard-content{
-        padding:28px 0 55px;
+
+        padding:
+            28px 0
+            55px;
     }
 
     .welcome{
-        padding:27px 24px;
+
+        padding:
+            27px 24px;
 
         border-radius:22px;
 
@@ -1082,22 +1593,27 @@ footer{
     }
 
     .welcome h1{
+
         font-size:30px;
     }
 
     .welcome p{
+
         font-size:13px;
     }
 
     .welcome-button{
+
         width:100%;
     }
 
     .welcome-button .btn{
+
         width:100%;
     }
 
     .stats{
+
         grid-template-columns:
             repeat(2,minmax(0,1fr));
 
@@ -1107,6 +1623,7 @@ footer{
     }
 
     .stat-card{
+
         padding:15px;
 
         gap:10px;
@@ -1115,7 +1632,9 @@ footer{
     }
 
     .stat-icon{
+
         width:40px;
+
         height:40px;
 
         min-width:40px;
@@ -1124,52 +1643,63 @@ footer{
     }
 
     .stat-number{
+
         font-size:20px;
     }
 
     .stat-label{
+
         font-size:10.5px;
 
         white-space:normal;
     }
 
     .section-head{
+
         align-items:flex-start;
 
         flex-direction:column;
     }
 
     .section-head .btn{
+
         width:100%;
     }
 
     .task-card{
+
         align-items:flex-start;
 
         padding:15px;
     }
 
     .task-status{
+
         display:none;
     }
 
     .task-content h3{
+
         font-size:13px;
     }
 
     .task-content p{
+
         font-size:11px;
     }
 
     .quiz-grid{
+
         grid-template-columns:1fr;
     }
 
     .quick-card{
+
         padding:21px;
     }
 
     .footer-inner{
+
         flex-direction:column;
 
         align-items:flex-start;
@@ -1178,21 +1708,24 @@ footer{
 }
 
 
-/* =========================================================
-   VERY SMALL SCREEN
-========================================================= */
+/* =====================================================
+   VERY SMALL
+====================================================== */
 
 @media(max-width:400px){
 
     .brand-text{
+
         display:none;
     }
 
     .stats{
+
         grid-template-columns:1fr;
     }
 
     .stat-card{
+
         padding:17px;
     }
 
@@ -1206,9 +1739,9 @@ footer{
 <body>
 
 
-<!-- =========================================================
+<!-- =====================================================
      NAVBAR
-========================================================= -->
+====================================================== -->
 
 <header class="navbar">
 
@@ -1220,17 +1753,24 @@ footer{
         <a
             href="murid.php"
             class="brand"
-            aria-label="SLearning Dashboard"
         >
+
+            <!--
+                Kalau logo kamu bukan di sini,
+                ganti src sesuai lokasi logo.
+            -->
 
             <img
                 src="assets/img/logo-smkn7.png"
                 alt="Logo SMK Negeri 7 Batam"
             >
 
+
             <span class="brand-text">
 
-                <strong>SLearning</strong>
+                <strong>
+                    SLearning
+                </strong>
 
                 <span>
                     SKAJU Learning • SMKN 7
@@ -1243,10 +1783,7 @@ footer{
 
         <!-- NAVIGATION -->
 
-        <nav
-            class="nav-links"
-            aria-label="Navigasi murid"
-        >
+        <nav class="nav-links">
 
             <a
                 href="murid.php"
@@ -1275,34 +1812,71 @@ footer{
         <a
             href="profil.php"
             class="profile"
-            title="Buka Profil Saya"
+            title="Profil Saya"
         >
 
             <div class="avatar">
 
                 <?php
-                echo strtoupper(
-                    substr($nama_murid, 0, 1)
-                );
+                echo htmlspecialchars($inisial);
                 ?>
 
             </div>
 
+
             <div class="profile-info">
 
                 <strong>
+
                     <?php
                     echo htmlspecialchars($nama_murid);
                     ?>
+
                 </strong>
 
+
                 <span>
-                    <?php
-                    echo htmlspecialchars($nis);
+
+                    @<?php
+                    echo htmlspecialchars($username);
                     ?>
+
                 </span>
 
             </div>
+
+        </a>
+
+
+        <!-- LOGOUT -->
+
+        <a
+            href="logout.php"
+            class="btn btn-logout"
+            onclick="return confirm('Yakin ingin keluar?')"
+            title="Keluar dari SLearning"
+        >
+
+            <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            >
+
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+
+                <polyline points="16 17 21 12 16 7"/>
+
+                <line x1="21" y1="12" x2="9" y2="12"/>
+
+            </svg>
+
+            Keluar
 
         </a>
 
@@ -1312,9 +1886,9 @@ footer{
 </header>
 
 
-<!-- =========================================================
+<!-- =====================================================
      DASHBOARD
-========================================================= -->
+====================================================== -->
 
 <main class="dashboard">
 
@@ -1333,13 +1907,17 @@ footer{
                     Dashboard Murid
                 </small>
 
+
                 <h1>
+
                     Halo,
                     <?php
                     echo htmlspecialchars($nama_murid);
                     ?>
                     👋
+
                 </h1>
+
 
                 <p>
                     Selamat datang di SLearning.
@@ -1401,8 +1979,6 @@ footer{
                         fill="none"
                         stroke="currentColor"
                         stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
                     >
 
                         <path
@@ -1410,12 +1986,15 @@ footer{
                         />
 
                         <path d="M14 3v5h5"/>
+
                         <path d="M9 13h6"/>
+
                         <path d="M9 17h4"/>
 
                     </svg>
 
                 </div>
+
 
                 <div class="stat-content">
 
@@ -1432,7 +2011,7 @@ footer{
             </div>
 
 
-            <!-- QUIZIZ -->
+            <!-- QUIZ -->
 
             <div class="stat-card">
 
@@ -1458,6 +2037,7 @@ footer{
                     </svg>
 
                 </div>
+
 
                 <div class="stat-content">
 
@@ -1494,6 +2074,7 @@ footer{
                     </svg>
 
                 </div>
+
 
                 <div class="stat-content">
 
@@ -1534,6 +2115,7 @@ footer{
                     </svg>
 
                 </div>
+
 
                 <div class="stat-content">
 
@@ -1578,6 +2160,7 @@ footer{
 
                     </div>
 
+
                     <a
                         href="#"
                         class="btn btn-outline"
@@ -1604,8 +2187,6 @@ footer{
                                 fill="none"
                                 stroke="currentColor"
                                 stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
                             >
 
                                 <path
@@ -1613,7 +2194,9 @@ footer{
                                 />
 
                                 <path d="M14 3v5h5"/>
+
                                 <path d="M9 13h6"/>
+
                                 <path d="M9 17h4"/>
 
                             </svg>
@@ -1661,7 +2244,9 @@ footer{
                                 />
 
                                 <path d="M14 3v5h5"/>
+
                                 <path d="M9 13h6"/>
+
                                 <path d="M9 17h4"/>
 
                             </svg>
@@ -1709,7 +2294,9 @@ footer{
                                 />
 
                                 <path d="M14 3v5h5"/>
+
                                 <path d="M9 13h6"/>
+
                                 <path d="M9 17h4"/>
 
                             </svg>
@@ -1742,7 +2329,9 @@ footer{
             </section>
 
 
-            <!-- AKSES CEPAT -->
+            <!-- =================================================
+                 AKSES CEPAT
+            ================================================== -->
 
             <aside class="quick-card">
 
@@ -1879,7 +2468,7 @@ footer{
 
 
         <!-- =================================================
-             QUIZIZ
+             QUIZ
         ================================================== -->
 
         <section
@@ -1901,6 +2490,7 @@ footer{
 
                 </div>
 
+
                 <a
                     href="#"
                     class="btn btn-outline"
@@ -1913,8 +2503,6 @@ footer{
 
             <div class="quiz-grid">
 
-
-                <!-- QUIZ 1 -->
 
                 <article class="quiz-card">
 
@@ -1930,13 +2518,16 @@ footer{
 
                     </div>
 
+
                     <h3>
                         PBO — Class & Object
                     </h3>
 
+
                     <p>
                         20 soal pilihan ganda tentang konsep dasar Pemrograman Berorientasi Objek.
                     </p>
+
 
                     <div class="quiz-bottom">
 
@@ -1953,8 +2544,6 @@ footer{
                 </article>
 
 
-                <!-- QUIZ 2 -->
-
                 <article class="quiz-card">
 
                     <div class="quiz-top">
@@ -1969,13 +2558,16 @@ footer{
 
                     </div>
 
+
                     <h3>
                         Teks Argumentasi
                     </h3>
 
+
                     <p>
                         Uji pemahaman tentang struktur dan kaidah teks argumentasi.
                     </p>
+
 
                     <div class="quiz-bottom">
 
@@ -1992,8 +2584,6 @@ footer{
                 </article>
 
 
-                <!-- QUIZ 3 -->
-
                 <article class="quiz-card">
 
                     <div class="quiz-top">
@@ -2008,13 +2598,16 @@ footer{
 
                     </div>
 
+
                     <h3>
                         Kolonialisme & Imperialisme
                     </h3>
 
+
                     <p>
                         Materi kolonialisme, imperialisme, VOC, dan perlawanan terhadap kolonialisme.
                     </p>
+
 
                     <div class="quiz-bottom">
 
@@ -2151,9 +2744,9 @@ footer{
 </main>
 
 
-<!-- =========================================================
+<!-- =====================================================
      FOOTER
-========================================================= -->
+====================================================== -->
 
 <footer>
 
@@ -2176,6 +2769,7 @@ footer{
 
             </span>
 
+
             <span>
                 Dashboard Murid
             </span>
@@ -2188,4 +2782,5 @@ footer{
 
 
 </body>
+
 </html>

@@ -1,6 +1,16 @@
 <?php
 session_start();
 
+// Kalau sudah login, langsung arahkan sesuai jenis akun
+if (isset($_SESSION["user_id"]) && isset($_SESSION["jenis"])) {
+    if ($_SESSION["jenis"] === "guru") {
+        header("Location: guru.php");
+    } else {
+        header("Location: murid.php");
+    }
+    exit;
+}
+
 /* =====================================
    DATABASE CONNECTION
 ===================================== */
@@ -159,9 +169,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $_SESSION["user_id"] = $user["id"];
                 $_SESSION["nama"] = $user["nama"];
                 $_SESSION["username"] = $user["username"];
+                $_SESSION["email"] = $user["email"] ?? "";
                 $_SESSION["jenis"] = $user["jenis"];
 
-                $success = "Login berhasil! Selamat datang, " . $user["nama"] . ".";
+                // Langsung pindahkan ke halaman sesuai jenis akun
+                if ($user["jenis"] === "guru") {
+                    header("Location: guru.php");
+                } else {
+                    header("Location: murid.php");
+                }
+                exit;
 
             } else {
 

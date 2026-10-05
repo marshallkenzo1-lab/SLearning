@@ -2,6 +2,17 @@
 // SLearning - SKAJU Learning | Dashboard Guru
 session_start();
 
+// Proteksi: wajib login, dan hanya jenis guru
+if (!isset($_SESSION['user_id'])) {
+    header("Location: login.php");
+    exit;
+}
+
+if (($_SESSION['jenis'] ?? '') === 'murid') {
+    header("Location: murid.php");
+    exit;
+}
+
 // Dummy data Guru
 $nama_guru = $_SESSION['nama'] ?? 'Budi Santoso, S.Kom';
 $nip = $_SESSION['nip'] ?? 'NIP. 19850723 201001 1 015';
@@ -152,6 +163,8 @@ button{ font-family:inherit; cursor:pointer; }
 .btn-yellow:hover{ background:var(--yellow-hover); transform:translateY(-2px); box-shadow:0 8px 22px rgba(255,193,7,.3); }
 .btn-outline{ background:white; border-color:var(--border); color:var(--text); }
 .btn-outline:hover{ background:var(--bg-soft); }
+.btn-logout{ background:#fff; border:1px solid var(--border); color:#b42318; }
+.btn-logout:hover{ background:#fef2f2; border-color:#f5c2c0; color:#912018; }
 
 .search-wrapper { position: relative; display: flex; align-items: center; }
 .search-wrapper svg { position: absolute; left: 14px; color: var(--muted); }
@@ -291,8 +304,10 @@ footer strong{ color:white; }
     .nav-links{ display:none; }
 }
 @media(max-width:650px){
-    .nav-inner{ padding:12px 16px; }
+    .nav-inner{ padding:12px 16px; gap:12px; }
+    .nav-tools{ padding-left:0; border-left:none; gap:10px; margin-left:auto; }
     .profile-info{ display:none; }
+    .btn-logout{ padding:9px 12px; font-size:12px; }
     .container{ padding:0 16px; }
     .welcome{ padding:25px; flex-direction:column; align-items:flex-start; }
     .welcome h1 { font-size: 22px; }
@@ -341,6 +356,10 @@ footer strong{ color:white; }
                     <span>Pengajar</span>
                 </div>
             </div>
+            <a href="logout.php" class="btn btn-logout" onclick="return confirm('Yakin ingin keluar?')">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                Keluar
+            </a>
         </div>
     </div>
 </header>
