@@ -187,6 +187,188 @@ $inisial = strtoupper(
     substr(trim($nama_murid), 0, 1)
 );
 
+
+// =========================================================
+// PENGUMPULAN TUGAS
+// =========================================================
+
+$daftar_tugas = [
+    1 => [
+        'judul' => 'Laporan Praktik Kerja Lapangan',
+        'mapel' => 'PPLG',
+        'deadline' => '4 Oktober 2026, 23.59 WIB',
+        'deskripsi' => 'Buat laporan Praktik Kerja Lapangan sesuai format yang telah diberikan oleh guru.'
+    ],
+    2 => [
+        'judul' => 'Praktik PBO — Class & Object',
+        'mapel' => 'PPLG',
+        'deadline' => '6 Oktober 2026',
+        'deskripsi' => 'Buat program sederhana menggunakan konsep Class dan Object.'
+    ],
+    3 => [
+        'judul' => 'Tugas Argumentasi Bahasa Indonesia',
+        'mapel' => 'Bahasa Indonesia',
+        'deadline' => '8 Oktober 2026',
+        'deskripsi' => 'Buat teks argumentasi sesuai ketentuan tugas dari guru.'
+    ]
+];
+
+$pengumpulan = [];
+
+// Ambil file yang sudah dikumpulkan murid ini.
+$stmt_pengumpulan = mysqli_prepare(
+    $koneksi,
+    "SELECT tugas_id, nama_file, file_path, dikumpulkan_at
+     FROM pengumpulan_tugas
+     WHERE user_id = ?"
+);
+
+if ($stmt_pengumpulan) {
+    mysqli_stmt_bind_param($stmt_pengumpulan, "i", $user_id_session);
+    mysqli_stmt_execute($stmt_pengumpulan);
+    $hasil_pengumpulan = mysqli_stmt_get_result($stmt_pengumpulan);
+
+    while ($row_pengumpulan = mysqli_fetch_assoc($hasil_pengumpulan)) {
+        $pengumpulan[(int)$row_pengumpulan['tugas_id']] = $row_pengumpulan;
+    }
+
+    mysqli_stmt_close($stmt_pengumpulan);
+}
+
+// Proses upload file.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kumpulkan_tugas'])) {
+
+    $tugas_id_upload = (int)($_POST['tugas_id'] ?? 0);
+
+    if (!isset($daftar_tugas[$tugas_id_upload])) {
+        $_SESSION['pesan_tugas'] = 'Tugas tidak ditemukan.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php#tugas');
+        exit;
+    }
+
+    if (!isset($_FILES['file_tugas']) || $_FILES['file_tugas']['error'] !== UPLOAD_ERR_OK) {
+        $_SESSION['pesan_tugas'] = 'Silakan pilih file terlebih dahulu.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+        exit;
+    }
+
+    $file_tugas = $_FILES['file_tugas'];
+    $maksimal = 10 * 1024 * 1024;
+    $ekstensi_diizinkan = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'zip', 'rar', 'jpg', 'jpeg', 'png'];
+    $nama_file_asli = $file_tugas['name'];
+    $ekstensi = strtolower(pathinfo($nama_file_asli, PATHINFO_EXTENSION));
+
+    if ($file_tugas['size'] > $maksimal) {
+        $_SESSION['pesan_tugas'] = 'Ukuran file maksimal 10 MB.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+        exit;
+    }
+
+    if (!in_array($ekstensi, $ekstensi_diizinkan, true)) {
+        $_SESSION['pesan_tugas'] = 'Format file tidak diperbolehkan. Gunakan PDF, DOC, DOCX, PPT, PPTX, ZIP, RAR, JPG, JPEG, atau PNG.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+        exit;
+    }
+
+    $folder_upload = __DIR__ . '/uploads/tugas/';
+
+    if (!is_dir($folder_upload)) {
+        mkdir($folder_upload, 0777, true);
+    }
+
+    $nama_file_baru = 'tugas_' . $user_id_session . '_' . $tugas_id_upload . '_' . time() . '.' . $ekstensi;
+    $lokasi_file = $folder_upload . $nama_file_baru;
+    $path_database = 'uploads/tugas/' . $nama_file_baru;
+
+    if (!move_uploaded_file($file_tugas['tmp_name'], $lokasi_file)) {
+        $_SESSION['pesan_tugas'] = 'File gagal diupload.';
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+        header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+        exit;
+    }
+
+    // Cek apakah murid sudah pernah mengumpulkan tugas ini.
+    $stmt_cek = mysqli_prepare(
+        $koneksi,
+        "SELECT id, file_path
+         FROM pengumpulan_tugas
+         WHERE tugas_id = ? AND user_id = ?
+         LIMIT 1"
+    );
+
+    $data_lama = null;
+
+    if ($stmt_cek) {
+        mysqli_stmt_bind_param($stmt_cek, 'ii', $tugas_id_upload, $user_id_session);
+        mysqli_stmt_execute($stmt_cek);
+        $hasil_cek = mysqli_stmt_get_result($stmt_cek);
+        $data_lama = mysqli_fetch_assoc($hasil_cek);
+        mysqli_stmt_close($stmt_cek);
+    }
+
+    if ($data_lama) {
+        // Hapus file lama jika ada.
+        $file_lama = __DIR__ . '/' . $data_lama['file_path'];
+        if (is_file($file_lama)) {
+            @unlink($file_lama);
+        }
+
+        $stmt_simpan = mysqli_prepare(
+            $koneksi,
+            "UPDATE pengumpulan_tugas
+             SET nama_file = ?, file_path = ?, dikumpulkan_at = CURRENT_TIMESTAMP
+             WHERE id = ?"
+        );
+
+        if ($stmt_simpan) {
+            mysqli_stmt_bind_param($stmt_simpan, 'ssi', $nama_file_asli, $path_database, $data_lama['id']);
+        }
+    } else {
+        $stmt_simpan = mysqli_prepare(
+            $koneksi,
+            "INSERT INTO pengumpulan_tugas
+             (tugas_id, user_id, nama_file, file_path)
+             VALUES (?, ?, ?, ?)"
+        );
+
+        if ($stmt_simpan) {
+            mysqli_stmt_bind_param($stmt_simpan, 'iiss', $tugas_id_upload, $user_id_session, $nama_file_asli, $path_database);
+        }
+    }
+
+    if ($stmt_simpan && mysqli_stmt_execute($stmt_simpan)) {
+        $_SESSION['pesan_tugas'] = 'Tugas berhasil dikumpulkan.';
+        $_SESSION['tipe_pesan_tugas'] = 'success';
+    } else {
+        // Jika database gagal menyimpan, hapus file yang baru diupload.
+        if (is_file($lokasi_file)) {
+            @unlink($lokasi_file);
+        }
+        $_SESSION['pesan_tugas'] = 'Tugas gagal disimpan ke database: ' . mysqli_error($koneksi);
+        $_SESSION['tipe_pesan_tugas'] = 'error';
+    }
+
+    if ($stmt_simpan) {
+        mysqli_stmt_close($stmt_simpan);
+    }
+
+    header('Location: murid.php?tugas=' . $tugas_id_upload . '#pengumpulan');
+    exit;
+}
+
+$pesan_tugas = $_SESSION['pesan_tugas'] ?? '';
+$tipe_pesan_tugas = $_SESSION['tipe_pesan_tugas'] ?? '';
+unset($_SESSION['pesan_tugas'], $_SESSION['tipe_pesan_tugas']);
+
+$tugas_dibuka = isset($_GET['tugas']) ? (int)$_GET['tugas'] : 0;
+if (!isset($daftar_tugas[$tugas_dibuka])) {
+    $tugas_dibuka = 0;
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -1729,6 +1911,137 @@ footer{
 
 }
 
+
+
+/* =====================================================
+   PENGUMPULAN TUGAS
+===================================================== */
+
+.task-card-link{
+    display:block;
+    cursor:pointer;
+}
+
+.task-card-link:hover{
+    text-decoration:none;
+}
+
+.task-open{
+    color:#765600;
+    font-size:11px;
+    font-weight:700;
+    margin-top:4px;
+    display:block;
+}
+
+.submission-box{
+    margin-top:18px;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:20px;
+    padding:25px;
+    box-shadow:var(--shadow);
+}
+
+.submission-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:15px;
+    margin-bottom:20px;
+}
+
+.submission-head h3{
+    font-size:20px;
+    margin-bottom:5px;
+}
+
+.submission-head p{
+    color:var(--muted);
+    font-size:12px;
+}
+
+.submission-description{
+    color:#4b5563;
+    font-size:13px;
+    line-height:1.7;
+    background:#f8f8f9;
+    border-radius:13px;
+    padding:15px;
+    margin-bottom:18px;
+}
+
+.submission-alert{
+    border-radius:12px;
+    padding:12px 15px;
+    font-size:12px;
+    font-weight:600;
+    margin-bottom:18px;
+}
+
+.submission-alert.success{
+    background:#e8f8ee;
+    color:#16713a;
+    border:1px solid #bde5cb;
+}
+
+.submission-alert.error{
+    background:#fff0f0;
+    color:#b42318;
+    border:1px solid #efc2c0;
+}
+
+.submission-current{
+    background:#f0faf3;
+    border:1px solid #c9e8d2;
+    border-radius:13px;
+    padding:14px;
+    margin-bottom:18px;
+}
+
+.submission-current strong{
+    display:block;
+    color:#16713a;
+    font-size:12px;
+    margin-bottom:4px;
+}
+
+.submission-current span{
+    color:#47785a;
+    font-size:11px;
+}
+
+.submission-form{
+    background:#fafafa;
+    border:1px dashed #d5d5d8;
+    border-radius:14px;
+    padding:18px;
+}
+
+.submission-form label{
+    display:block;
+    font-family:var(--font-h);
+    font-size:12px;
+    font-weight:700;
+    margin-bottom:9px;
+}
+
+.submission-form input[type="file"]{
+    width:100%;
+    padding:11px;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:10px;
+    font-size:12px;
+    margin-bottom:13px;
+}
+
+.submission-note{
+    color:var(--muted);
+    font-size:10.5px;
+    margin-bottom:13px;
+}
+
 </style>
 
 </head>
@@ -2172,155 +2485,61 @@ footer{
                 <div class="task-list">
 
 
-                    <!-- TASK 1 -->
+                    <?php foreach ($daftar_tugas as $id_tugas => $data_tugas): ?>
 
-                    <article class="task-card">
+                        <?php
+                            $sudah_kumpul = isset($pengumpulan[$id_tugas]);
+                        ?>
 
-                        <div class="task-icon">
+                        <a
+                            href="?tugas=<?= $id_tugas ?>#pengumpulan"
+                            class="task-card-link"
+                        >
+                            <article class="task-card">
 
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
+                                <div class="task-icon">
 
-                                <path
-                                    d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"
-                                />
+                                    <svg
+                                        width="22"
+                                        height="22"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                    >
+                                        <path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/>
+                                        <path d="M14 3v5h5"/>
+                                        <path d="M9 13h6"/>
+                                        <path d="M9 17h4"/>
+                                    </svg>
 
-                                <path d="M14 3v5h5"/>
+                                </div>
 
-                                <path d="M9 13h6"/>
+                                <div class="task-content">
 
-                                <path d="M9 17h4"/>
+                                    <h3>
+                                        <?= htmlspecialchars($data_tugas['judul']) ?>
+                                    </h3>
 
-                            </svg>
+                                    <p>
+                                        <?= htmlspecialchars($data_tugas['mapel']) ?>
+                                        • Deadline <?= htmlspecialchars($data_tugas['deadline']) ?>
+                                    </p>
 
-                        </div>
+                                    <span class="task-open">
+                                        <?= $sudah_kumpul ? 'Lihat pengumpulan →' : 'Buka dan kumpulkan →' ?>
+                                    </span>
 
+                                </div>
 
-                        <div class="task-content">
+                                <span class="task-status <?= $sudah_kumpul ? 'status-done' : 'status-wait' ?>">
+                                    <?= $sudah_kumpul ? 'Sudah Kumpul' : 'Belum Kumpul' ?>
+                                </span>
 
-                            <h3>
-                                Laporan Praktik Kerja Lapangan
-                            </h3>
+                            </article>
+                        </a>
 
-                            <p>
-                                PPLG • Deadline 4 Oktober 2026, 23.59 WIB
-                            </p>
-
-                        </div>
-
-
-                        <span class="task-status status-wait">
-                            Belum Kumpul
-                        </span>
-
-                    </article>
-
-
-                    <!-- TASK 2 -->
-
-                    <article class="task-card">
-
-                        <div class="task-icon">
-
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-
-                                <path
-                                    d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"
-                                />
-
-                                <path d="M14 3v5h5"/>
-
-                                <path d="M9 13h6"/>
-
-                                <path d="M9 17h4"/>
-
-                            </svg>
-
-                        </div>
-
-
-                        <div class="task-content">
-
-                            <h3>
-                                Praktik PBO — Class & Object
-                            </h3>
-
-                            <p>
-                                PPLG • Deadline 6 Oktober 2026
-                            </p>
-
-                        </div>
-
-
-                        <span class="task-status status-done">
-                            Sudah Kumpul
-                        </span>
-
-                    </article>
-
-
-                    <!-- TASK 3 -->
-
-                    <article class="task-card">
-
-                        <div class="task-icon">
-
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                            >
-
-                                <path
-                                    d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"
-                                />
-
-                                <path d="M14 3v5h5"/>
-
-                                <path d="M9 13h6"/>
-
-                                <path d="M9 17h4"/>
-
-                            </svg>
-
-                        </div>
-
-
-                        <div class="task-content">
-
-                            <h3>
-                                Tugas Argumentasi Bahasa Indonesia
-                            </h3>
-
-                            <p>
-                                Bahasa Indonesia • Deadline 8 Oktober 2026
-                            </p>
-
-                        </div>
-
-
-                        <span class="task-status status-wait">
-                            Belum Kumpul
-                        </span>
-
-                    </article>
-
+                    <?php endforeach; ?>
 
                 </div>
 
@@ -2464,6 +2683,92 @@ footer{
 
         </div>
 
+
+
+        <?php if ($tugas_dibuka): ?>
+
+            <!-- =================================================
+                 PENGUMPULAN TUGAS
+            ================================================== -->
+
+            <section class="submission-box" id="pengumpulan">
+
+                <div class="submission-head">
+                    <div>
+                        <h3>
+                            <?= htmlspecialchars($daftar_tugas[$tugas_dibuka]['judul']) ?>
+                        </h3>
+                        <p>
+                            <?= htmlspecialchars($daftar_tugas[$tugas_dibuka]['mapel']) ?>
+                            • Deadline <?= htmlspecialchars($daftar_tugas[$tugas_dibuka]['deadline']) ?>
+                        </p>
+                    </div>
+
+                    <a href="murid.php#tugas" class="btn btn-outline">
+                        Tutup
+                    </a>
+                </div>
+
+                <?php if ($pesan_tugas !== ''): ?>
+                    <div class="submission-alert <?= $tipe_pesan_tugas === 'success' ? 'success' : 'error' ?>">
+                        <?= htmlspecialchars($pesan_tugas) ?>
+                    </div>
+                <?php endif; ?>
+
+                <div class="submission-description">
+                    <?= nl2br(htmlspecialchars($daftar_tugas[$tugas_dibuka]['deskripsi'])) ?>
+                </div>
+
+                <?php if (isset($pengumpulan[$tugas_dibuka])): ?>
+                    <div class="submission-current">
+                        <strong>✓ Tugas sudah dikumpulkan</strong>
+                        <span>
+                            File: <?= htmlspecialchars($pengumpulan[$tugas_dibuka]['nama_file']) ?>
+                            • <?= htmlspecialchars($pengumpulan[$tugas_dibuka]['dikumpulkan_at']) ?>
+                        </span>
+                    </div>
+                <?php endif; ?>
+
+                <form
+                    method="POST"
+                    enctype="multipart/form-data"
+                    class="submission-form"
+                >
+
+                    <input
+                        type="hidden"
+                        name="tugas_id"
+                        value="<?= $tugas_dibuka ?>"
+                    >
+
+                    <label for="file_tugas">
+                        <?= isset($pengumpulan[$tugas_dibuka]) ? 'Ganti File Tugas' : 'Pilih File Tugas' ?>
+                    </label>
+
+                    <input
+                        type="file"
+                        id="file_tugas"
+                        name="file_tugas"
+                        required
+                    >
+
+                    <div class="submission-note">
+                        Maksimal 10 MB • PDF, DOC, DOCX, PPT, PPTX, ZIP, RAR, JPG, JPEG, PNG.
+                    </div>
+
+                    <button
+                        type="submit"
+                        name="kumpulkan_tugas"
+                        class="btn btn-yellow"
+                    >
+                        <?= isset($pengumpulan[$tugas_dibuka]) ? 'Kumpulkan Ulang' : 'Kumpulkan Tugas' ?>
+                    </button>
+
+                </form>
+
+            </section>
+
+        <?php endif; ?>
 
         <!-- =================================================
              QUIZ
