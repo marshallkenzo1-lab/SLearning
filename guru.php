@@ -13,164 +13,12 @@ if (($_SESSION['jenis'] ?? '') === 'murid') {
     exit;
 }
 
-// Inisialisasi array tugas di session jika belum ada
-if (!isset($_SESSION['list_tugas'])) {
-    $_SESSION['list_tugas'] = [
-        [
-            'id' => 1,
-            'judul' => 'Praktik PBO — Class & Object',
-            'kelas' => 'XI PPLG 1',
-            'deadline' => '2026-10-05 23:59',
-            'deskripsi' => 'Buat program sederhana menggunakan konsep Class dan Object pada Java.',
-            'kumpul' => '34/36 Kumpul'
-        ],
-        [
-            'id' => 2,
-            'judul' => 'Basis Data — Normalisasi',
-            'kelas' => 'XI PPLG 2',
-            'deadline' => '2025-01-01 23:59',
-            'deskripsi' => 'Pelajari normalisasi tabel hingga bentuk 3NF.',
-            'kumpul' => '15/35 Kumpul'
-        ]
-    ];
-}
-
-// Inisialisasi data Kelas & Kode Unik Kelas
-if (!isset($_SESSION['list_kelas'])) {
-    $_SESSION['list_kelas'] = [
-        ['id_kelas' => 1, 'nama_kelas' => 'XI PPLG 1', 'kode_gabung' => 'PPLG1-X7', 'jml_murid' => 36],
-        ['id_kelas' => 2, 'nama_kelas' => 'XI PPLG 2', 'kode_gabung' => 'PPLG2-K9', 'jml_murid' => 35],
-        ['id_kelas' => 3, 'nama_kelas' => 'XII PPLG', 'kode_gabung' => 'PPLG12-Z2', 'jml_murid' => 30]
-    ];
-}
-
-// Inisialisasi Data Absensi (Sesi Absen yang dibuat Guru)
-if (!isset($_SESSION['list_absensi'])) {
-    $_SESSION['list_absensi'] = [
-        [
-            'id_absen' => 1,
-            'kelas' => 'XI PPLG 1',
-            'tanggal' => '2026-10-05',
-            'jam_mulai' => '07:00',
-            'jam_selesai' => '08:30',
-            'status_sesi' => 'Dibuka'
-        ],
-        [
-            'id_absen' => 2,
-            'kelas' => 'XI PPLG 2',
-            'tanggal' => '2026-10-05',
-            'jam_mulai' => '09:00',
-            'jam_selesai' => '10:30',
-            'status_sesi' => 'Ditutup'
-        ]
-    ];
-}
-
-// PROSES TAMBAH KELAS BARU (KHUSUS GURU)
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aksi'] == 'tambah_kelas') {
-    $nama_kelas_baru = trim($_POST['nama_kelas_baru'] ?? '');
-    $kode_unik_baru = 'KLS-' . strtoupper(substr(md5(mt_rand()), 0, 5));
-
-    if (!empty($nama_kelas_baru)) {
-        array_unshift($_SESSION['list_kelas'], [
-            'id_kelas' => time(),
-            'nama_kelas' => $nama_kelas_baru,
-            'kode_gabung' => $kode_unik_baru,
-            'jml_murid' => 0
-        ]);
-    }
-    header("Location: guru.php#manajemen-kelas");
-    exit;
-}
-
-// PROSES BUAT SESI ABSENSI BARU
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aksi'] == 'buat_absen') {
-    $kelas_absen = $_POST['kelas_absen'] ?? '';
-    $tanggal_absen = $_POST['tanggal_absen'] ?? date('Y-m-d');
-    $jam_mulai = $_POST['jam_mulai'] ?? '07:00';
-    $jam_selesai = $_POST['jam_selesai'] ?? '09:00';
-
-    if (!empty($kelas_absen)) {
-        array_unshift($_SESSION['list_absensi'], [
-            'id_absen' => time(),
-            'kelas' => $kelas_absen,
-            'tanggal' => $tanggal_absen,
-            'jam_mulai' => $jam_mulai,
-            'jam_selesai' => $jam_selesai,
-            'status_sesi' => 'Dibuka'
-        ]);
-    }
-    header("Location: guru.php#menu-absensi");
-    exit;
-}
-
-// PROSES TAMBAH TUGAS BARU
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aksi'] == 'tambah') {
-    $id_baru = time(); 
-    $judul_baru = $_POST['judul_tugas'] ?? '';
-    $kelas_baru = $_POST['kelas'] ?? '';
-    $deadline_baru = str_replace('T', ' ', $_POST['deadline'] ?? '');
-    $deskripsi_baru = $_POST['deskripsi'] ?? '';
-
-    $nama_file = $_FILES['lampiran_guru']['name'] ?? '';
-    if($nama_file != "") {
-        $target_dir = "assets/uploads/";
-        if (!is_dir($target_dir)) {
-            mkdir($target_dir, 0777, true);
-        }
-        move_uploaded_file($_FILES['lampiran_guru']['tmp_name'], $target_dir . $nama_file);
-    }
-
-    array_unshift($_SESSION['list_tugas'], [
-        'id' => $id_baru,
-        'judul' => $judul_baru,
-        'kelas' => $kelas_baru,
-        'deadline' => $deadline_baru,
-        'deskripsi' => $deskripsi_baru,
-        'kumpul' => '0/36 Kumpul'
-    ]);
-
-    header("Location: guru.php#daftar-tugas");
-    exit;
-}
-
-// PROSES HAPUS TUGAS
-if (isset($_GET['hapus_id'])) {
-    $id_hapus = $_GET['hapus_id'];
-    foreach ($_SESSION['list_tugas'] as $key => $tugas) {
-        if ($tugas['id'] == $id_hapus) {
-            unset($_SESSION['list_tugas'][$key]);
-            break;
-        }
-    }
-    $_SESSION['list_tugas'] = array_values($_SESSION['list_tugas']);
-    header("Location: guru.php#daftar-tugas");
-    exit;
-}
-
-// PROSES EDIT TUGAS
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aksi'] == 'edit') {
-    $id_edit = $_POST['id_tugas'] ?? '';
-    foreach ($_SESSION['list_tugas'] as $key => $tugas) {
-        if ($tugas['id'] == $id_edit) {
-            $_SESSION['list_tugas'][$key]['judul'] = $_POST['judul_tugas'] ?? $tugas['judul'];
-            $_SESSION['list_tugas'][$key]['kelas'] = $_POST['kelas'] ?? $tugas['kelas'];
-            $_SESSION['list_tugas'][$key]['deadline'] = str_replace('T', ' ', $_POST['deadline'] ?? $tugas['deadline']);
-            $_SESSION['list_tugas'][$key]['deskripsi'] = $_POST['deskripsi'] ?? $tugas['deskripsi'];
-            break;
-        }
-    }
-    header("Location: guru.php#daftar-tugas");
-    exit;
-}
-
-// Waktu sekarang untuk penanda status tugas (Aktif / Lewat Tenggat)
-$waktu_sekarang = date('Y-m-d H:i');
-
-// Ambil data guru dari tabel slearning_db.login
+// Koneksi Database
 require_once __DIR__ . '/config/koneksi.php';
 
 $user_id = (int) $_SESSION['user_id'];
+
+// Ambil data guru dari tabel slearning_db.login
 $stmt = mysqli_prepare(
     $koneksi,
     "SELECT id, nama, username, email, jenis, level FROM login WHERE id = ? LIMIT 1"
@@ -182,7 +30,6 @@ $user = mysqli_fetch_assoc($result);
 mysqli_stmt_close($stmt);
 
 if (!$user) {
-    // Session ada tapi user tidak ada di tabel login
     header("Location: logout.php");
     exit;
 }
@@ -199,10 +46,134 @@ $username_guru = $user['username'];
 $email_guru    = $user['email'];
 $level_guru    = $user['level'] ?? 'user';
 
-// Hari ini (tanggal dinamis Indonesia)
-$hari_list = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-$bulan_list = [1=>'Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-$hari_ini = $hari_list[(int)date('w')] . ', ' . date('j') . ' ' . $bulan_list[(int)date('n')] . ' ' . date('Y');
+// =========================================================
+// PROSES TAMBAH KELAS BARU KE DATABASE MYSQL (PERMANEN)
+// =========================================================
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aksi'] == 'tambah_kelas') {
+    $nama_kelas_baru = trim($_POST['nama_kelas_baru'] ?? '');
+    $kode_unik_baru = 'KLS-' . strtoupper(substr(md5(mt_rand() . time()), 0, 5));
+
+    if (!empty($nama_kelas_baru)) {
+        $stmt_insert_kelas = mysqli_prepare(
+            $koneksi,
+            "INSERT INTO kelas (nama_kelas, kode_gabung, guru_id) VALUES (?, ?, ?)"
+        );
+        mysqli_stmt_bind_param($stmt_insert_kelas, "ssi", $nama_kelas_baru, $kode_unik_baru, $user_id);
+        mysqli_stmt_execute($stmt_insert_kelas);
+        mysqli_stmt_close($stmt_insert_kelas);
+    }
+    header("Location: guru.php#manajemen-kelas");
+    exit;
+}
+
+// =========================================================
+// PROSES BUAT SESI ABSENSI BARU KE DATABASE MYSQL (PERMANEN)
+// =========================================================
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aksi'] == 'buat_absen') {
+    $kelas_id_absen = (int)($_POST['kelas_id'] ?? 0);
+    $tanggal_absen = $_POST['tanggal_absen'] ?? date('Y-m-d');
+    $jam_mulai = $_POST['jam_mulai'] ?? '07:00';
+    $jam_selesai = $_POST['jam_selesai'] ?? '09:00';
+    $judul_absensi = 'Absensi Pertemuan — ' . $tanggal_absen . ' (' . $jam_mulai . '-' . $jam_selesai . ' WIB)';
+
+    if ($kelas_id_absen > 0) {
+        $stmt_absen = mysqli_prepare(
+            $koneksi,
+            "INSERT INTO absensi (guru_id, kelas_id, judul_absensi, tanggal) VALUES (?, ?, ?, ?)"
+        );
+        mysqli_stmt_bind_param($stmt_absen, "iiss", $user_id, $kelas_id_absen, $judul_absensi, $tanggal_absen);
+        mysqli_stmt_execute($stmt_absen);
+        mysqli_stmt_close($stmt_absen);
+    }
+    header("Location: guru.php#menu-absensi");
+    exit;
+}
+
+// =========================================================
+// PROSES TAMBAH TUGAS BARU KE DATABASE MYSQL (PERMANEN)
+// =========================================================
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['aksi']) && $_POST['aksi'] == 'tambah') {
+    $judul_baru = trim($_POST['judul_tugas'] ?? '');
+    $kelas_id_tugas = (int)($_POST['kelas_id'] ?? 0);
+    $deadline_baru = str_replace('T', ' ', $_POST['deadline'] ?? '');
+    $deskripsi_baru = trim($_POST['deskripsi'] ?? '');
+
+    if (!empty($judul_baru) && $kelas_id_tugas > 0) {
+        $stmt_tugas = mysqli_prepare(
+            $koneksi,
+            "INSERT INTO tugas (guru_id, kelas_id, judul_tugas, deadline, deskripsi) VALUES (?, ?, ?, ?, ?)"
+        );
+        mysqli_stmt_bind_param($stmt_tugas, "iisss", $user_id, $kelas_id_tugas, $judul_baru, $deadline_baru, $deskripsi_baru);
+        mysqli_stmt_execute($stmt_tugas);
+        mysqli_stmt_close($stmt_tugas);
+    }
+
+    header("Location: guru.php#daftar-tugas");
+    exit;
+}
+
+// =========================================================
+// AMBIL DATA KELAS DARI DATABASE MYSQL
+// =========================================================
+$list_kelas = [];
+$stmt_get_kelas = mysqli_prepare(
+    $koneksi,
+    "SELECT k.id AS id_kelas, k.nama_kelas, k.kode_gabung, 
+            (SELECT COUNT(*) FROM anggota_kelas ak WHERE ak.kelas_id = k.id) AS jml_murid
+     FROM kelas k
+     WHERE k.guru_id = ?
+     ORDER BY k.id DESC"
+);
+mysqli_stmt_bind_param($stmt_get_kelas, "i", $user_id);
+mysqli_stmt_execute($stmt_get_kelas);
+$res_kelas = mysqli_stmt_get_result($stmt_get_kelas);
+while ($row_k = mysqli_fetch_assoc($res_kelas)) {
+    $list_kelas[] = $row_k;
+}
+mysqli_stmt_close($stmt_get_kelas);
+
+// =========================================================
+// AMBIL DATA TUGAS DARI DATABASE MYSQL (REAL-TIME & PERMANEN)
+// =========================================================
+$list_tugas = [];
+$stmt_get_tugas = mysqli_prepare(
+    $koneksi,
+    "SELECT t.id, t.judul_tugas AS judul, t.deadline, t.deskripsi, k.nama_kelas AS kelas
+     FROM tugas t
+     JOIN kelas k ON t.kelas_id = k.id
+     WHERE t.guru_id = ?
+     ORDER BY t.id DESC"
+);
+mysqli_stmt_bind_param($stmt_get_tugas, "i", $user_id);
+mysqli_stmt_execute($stmt_get_tugas);
+$res_tugas = mysqli_stmt_get_result($stmt_get_tugas);
+while ($row_t = mysqli_fetch_assoc($res_tugas)) {
+    $row_t['kumpul'] = '0/36 Kumpul';
+    $list_tugas[] = $row_t;
+}
+mysqli_stmt_close($stmt_get_tugas);
+
+// =========================================================
+// AMBIL DATA ABSENSI DARI DATABASE MYSQL (REAL-TIME & PERMANEN)
+// =========================================================
+$list_absensi = [];
+$stmt_get_absen = mysqli_prepare(
+    $koneksi,
+    "SELECT a.id, a.judul_absensi, a.tanggal, k.nama_kelas AS kelas
+     FROM absensi a
+     JOIN kelas k ON a.kelas_id = k.id
+     WHERE a.guru_id = ?
+     ORDER BY a.id DESC"
+);
+mysqli_stmt_bind_param($stmt_get_absen, "i", $user_id);
+mysqli_stmt_execute($stmt_get_absen);
+$res_absen = mysqli_stmt_get_result($stmt_get_absen);
+while ($row_a = mysqli_fetch_assoc($res_absen)) {
+    $list_absensi[] = $row_a;
+}
+mysqli_stmt_close($stmt_get_absen);
+
+$waktu_sekarang = date('Y-m-d H:i');
 ?>
 
 <!DOCTYPE html>
@@ -266,11 +237,6 @@ button{ font-family:inherit; cursor:pointer; }
 .btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:44px; padding:11px 18px; border-radius:11px; border:1px solid transparent; font-family:var(--font-h); font-weight:600; font-size:13px; cursor:pointer; transition:.2s; text-decoration: none; }
 .btn-yellow{ background:var(--yellow); color:#171300; }
 .btn-yellow:hover{ background:var(--yellow-hover); transform:translateY(-2px); box-shadow:0 8px 22px rgba(255,193,7,.3); }
-.btn-sm { min-height: 32px; padding: 6px 12px; font-size: 11px; border-radius: 8px; }
-.btn-outline { background: white; border-color: var(--border); color: var(--text); }
-.btn-outline:hover { background: var(--bg-soft); }
-.btn-danger { background: #feecec; color: #dc2626; }
-.btn-danger:hover { background: #fca5a5; color: white; }
 .btn-logout { background: #fff; border: 1px solid var(--border); color: #b42318; }
 .btn-logout:hover { background: #fef2f2; border-color: #f5c2c0; color: #912018; }
 
@@ -283,10 +249,6 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 .form-row{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
 
 /* TOOL & TASK */
-.tool-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 32px; }
-.tool-btn { background: white; border: 1px solid var(--border); border-radius: 14px; padding: 18px 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; transition: 0.2s; color: var(--text); font-weight: 600; font-size: 13px; cursor:pointer; text-align: center; }
-.tool-btn:hover { border-color: var(--yellow); transform: translateY(-3px); box-shadow: var(--shadow-sm); }
-.tool-btn svg { color: var(--dark); background: var(--bg-soft); padding: 10px; border-radius: 12px; width: 44px; height: 44px; }
 .task-list{ display:grid; gap:12px; margin-bottom: 32px; }
 .task-card{ background:white; border:1px solid var(--border); border-radius:var(--radius); padding:19px; display:flex; align-items:center; gap:15px; transition:.2s; }
 .task-card:hover{ transform:translateY(-3px); border-color: var(--yellow); }
@@ -295,8 +257,6 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 .task-content h3{ font-family:var(--font-h); font-size:14px; margin-bottom:3px; }
 .task-content p{ color:var(--muted); font-size:12px; }
 .task-badge { font-size: 10px; padding: 4px 8px; border-radius: 6px; background: var(--yellow-soft); color: #8a6500; font-weight: 700; margin-left: 8px; }
-.task-action{ font-size:12px; font-weight:600; padding:8px 14px; cursor: pointer; font-family: var(--font-h); border-radius:8px; background:var(--bg-soft); border:1px solid var(--border); transition: 0.2s; }
-.task-action:hover{ background:var(--yellow); color:#171300; border-color:var(--yellow); }
 
 /* KELAS CARD KODE */
 .class-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 32px; }
@@ -316,42 +276,11 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 .profile-detail .label{ font-size:11px; color:#a1a1aa; display:block; margin-bottom:2px; }
 .profile-detail .value{ font-size:13px; font-weight:600; color:white; }
 
-/* MODAL */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); z-index: 999; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: 0.3s; }
-.modal-overlay.active { opacity: 1; pointer-events: auto; }
-.modal-content { background: var(--bg); width: 95%; max-width: 900px; max-height: 85vh; border-radius: var(--radius-lg); padding: 30px; box-shadow: var(--shadow); transform: translateY(20px); transition: 0.3s; overflow-y: auto; position: relative; }
-.modal-content.sm { max-width: 600px; }
-.modal-overlay.active .modal-content { transform: translateY(0); }
-.btn-close { position: absolute; top: 20px; right: 20px; background: var(--bg-soft); border: 1px solid var(--border); width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.data-table-container { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 20px;}
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.data-table th, .data-table td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
-.data-table th { background: var(--bg-soft); font-weight: 600; color: var(--muted); font-family: var(--font-h); }
-.status-badge{ font-size:10px; font-weight:700; padding:4px 8px; border-radius:6px; display:inline-block; }
-.badge-green{ background:#dcfce7; color:#15803d; }
-.badge-blue{ background:#e0f2fe; color:#0369a1; }
-.badge-red{ background:#feecec; color:#dc2626; }
-.badge-yellow{ background:var(--yellow-soft); color:#8a6500; }
-.nilai-input { width: 60px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; text-align: center; font-weight: bold;}
-
-/* RESPONSIVE */
 @media(max-width:980px){
     .stats{ grid-template-columns:1fr 1fr; }
     .main-grid{ grid-template-columns:1fr; }
-    .tool-grid{ grid-template-columns:repeat(2,1fr); }
     .class-grid{ grid-template-columns:1fr 1fr; }
     .nav-links{ display:none; }
-}
-@media(max-width:650px){
-    .nav-inner{ padding:12px 16px; gap:12px; }
-    .nav-tools{ padding-left:0; border-left:none; gap:10px; margin-left:auto; }
-    .profile-info{ display:none; }
-    .btn-logout{ padding:9px 12px; font-size:12px; }
-    .container{ padding:0 16px; }
-    .stats{ grid-template-columns:1fr 1fr; gap:10px; }
-    .class-grid{ grid-template-columns:1fr; }
-    .form-row{ grid-template-columns:1fr; }
-    .task-card{ flex-direction:column; align-items:flex-start; }
 }
 </style>
 </head>
@@ -375,7 +304,7 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                 <div class="avatar"><?php echo strtoupper(substr($nama_guru, 0, 1)); ?></div>
                 <div class="profile-info"><strong><?php echo htmlspecialchars($nama_guru); ?></strong><span>Pengajar</span></div>
             </div>
-            <a href="logout.php" class="btn btn-logout" onclick="return confirm('Yakin ingin keluar?')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Keluar</a>
+            <a href="logout.php" class="btn btn-logout" onclick="return confirm('Yakin ingin keluar?')">Keluar</a>
         </div>
     </div>
 </header>
@@ -384,32 +313,21 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 <div class="container dashboard-content">
 
     <section class="stats">
-        <div class="stat-card"><div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div><div><div class="stat-number"><?php echo count($_SESSION['list_tugas']); ?></div><div class="stat-label">Tugas Dibuat</div></div></div>
-        <div class="stat-card"><div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 14l2 2 4-4"/></svg></div><div><div class="stat-number"><?php echo count($_SESSION['list_absensi']); ?></div><div class="stat-label">Sesi Absen Aktif</div></div></div>
-        <div class="stat-card"><div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div><div class="stat-number"><?php echo count($_SESSION['list_kelas']); ?></div><div class="stat-label">Kelas Terdaftar</div></div></div>
-        <div class="stat-card"><div class="stat-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></div><div><div class="stat-number">86%</div><div class="stat-label">Partisipasi</div></div></div>
+        <div class="stat-card"><div class="stat-icon">📄</div><div><div class="stat-number"><?php echo count($list_tugas); ?></div><div class="stat-label">Tugas Dibuat</div></div></div>
+        <div class="stat-card"><div class="stat-icon">📅</div><div><div class="stat-number"><?php echo count($list_absensi); ?></div><div class="stat-label">Sesi Absen Aktif</div></div></div>
+        <div class="stat-card"><div class="stat-icon">🏫</div><div><div class="stat-number"><?php echo count($list_kelas); ?></div><div class="stat-label">Kelas Terdaftar</div></div></div>
+        <div class="stat-card"><div class="stat-icon">📊</div><div><div class="stat-number">86%</div><div class="stat-label">Partisipasi</div></div></div>
     </section>
 
     <div class="main-grid">
         <div class="main-column">
             
-            <!-- ALAT GURU -->
-            <section id="alat-guru">
-                <div class="section-head"><div><h2>Alat Mengajar</h2><p>Akses cepat fitur kelas.</p></div></div>
-                <div class="tool-grid">
-                    <button class="tool-btn" onclick="openModal('modalBukuNilai')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>Buku Nilai</button>
-                    <button class="tool-btn" onclick="openModal('modalRekapAbsensi')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 14l2 2 4-4"/></svg>Rekap Absensi</button>
-                    <button class="tool-btn" onclick="openModal('modalPengumuman')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>Buat Pengumuman</button>
-                    <button class="tool-btn" onclick="openModal('modalEksporData')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Ekspor Data</button>
-                </div>
-            </section>
-
             <!-- MANAJEMEN KELAS & KODE GABUNG -->
             <section id="manajemen-kelas">
                 <div class="section-head">
                     <div>
                         <h2>Manajemen Kelas & Kode Gabung</h2>
-                        <p>Buat kelas baru dan dapatkan kode unik untuk dibagikan ke murid.</p>
+                        <p>Buat kelas baru dan dapatkan kode unik permanen untuk dibagikan ke murid.</p>
                     </div>
                 </div>
 
@@ -425,15 +343,19 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                 </form>
 
                 <div class="class-grid">
-                    <?php foreach ($_SESSION['list_kelas'] as $kls): ?>
-                    <div class="class-card">
-                        <h4><?php echo htmlspecialchars($kls['nama_kelas']); ?></h4>
-                        <p><?php echo $kls['jml_murid']; ?> Murid Tergabung</p>
-                        <div class="code-box" title="Klik untuk salin kode" onclick="navigator.clipboard.writeText('<?php echo $kls['kode_gabung']; ?>'); alert('Kode kelas <?php echo $kls['kode_gabung']; ?> berhasil disalin!');">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px;"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg><?php echo htmlspecialchars($kls['kode_gabung']); ?>
+                    <?php if (empty($list_kelas)): ?>
+                        <p style="color: var(--muted); font-size: 13px;">Belum ada kelas yang dibuat. Silakan buat kelas baru di atas.</p>
+                    <?php else: ?>
+                        <?php foreach ($list_kelas as $kls): ?>
+                        <div class="class-card">
+                            <h4><?php echo htmlspecialchars($kls['nama_kelas']); ?></h4>
+                            <p><?php echo $kls['jml_murid']; ?> Murid Tergabung</p>
+                            <div class="code-box" title="Klik untuk salin kode" onclick="navigator.clipboard.writeText('<?php echo $kls['kode_gabung']; ?>'); alert('Kode kelas <?php echo $kls['kode_gabung']; ?> berhasil disalin!');">
+                                📋 <?php echo htmlspecialchars($kls['kode_gabung']); ?>
+                            </div>
                         </div>
-                    </div>
-                    <?php endforeach; ?>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
             </section>
 
@@ -446,58 +368,53 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                     </div>
                 </div>
 
-                <!-- Form Buat Sesi Absen -->
                 <form action="guru.php" method="POST" class="form-card" style="margin-bottom: 20px;">
                     <input type="hidden" name="aksi" value="buat_absen">
                     <h3 style="font-family: var(--font-h); font-size: 16px; margin-bottom: 14px;">Buka Sesi Absen Pertemuan Baru</h3>
+                    
+                    <div class="form-group">
+                        <label>Pilih Kelas</label>
+                        <select name="kelas_id" class="form-control" required>
+                            <option value="" disabled selected>-- Pilih Kelas --</option>
+                            <?php foreach ($list_kelas as $kls): ?>
+                                <option value="<?php echo $kls['id_kelas']; ?>"><?php echo htmlspecialchars($kls['nama_kelas']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
                     <div class="form-row">
-                        <div class="form-group">
-                            <label>Pilih Kelas</label>
-                            <select name="kelas_absen" class="form-control" required>
-                                <option value="" disabled selected>-- Pilih Kelas --</option>
-                                <?php foreach ($_SESSION['list_kelas'] as $kls): ?>
-                                    <option value="<?php echo $kls['nama_kelas']; ?>"><?php echo $kls['nama_kelas']; ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
                         <div class="form-group">
                             <label>Tanggal Pertemuan</label>
                             <input type="date" name="tanggal_absen" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
                         </div>
-                    </div>
-                    <div class="form-row">
                         <div class="form-group">
-                            <label>Jam Mulai</label>
-                            <input type="time" name="jam_mulai" class="form-control" value="07:00" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Jam Selesai</label>
-                            <input type="time" name="jam_selesai" class="form-control" value="09:00" required>
+                            <label>Jam Mulai - Selesai</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="time" name="jam_mulai" class="form-control" value="07:00" required>
+                                <input type="time" name="jam_selesai" class="form-control" value="09:00" required>
+                            </div>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-yellow" style="width: 100%; margin-top: 10px;">Buka Sesi Absen Sekarang</button>
                 </form>
 
-                <!-- Daftar Sesi Absen -->
                 <div class="task-list">
-                    <?php foreach ($_SESSION['list_absensi'] as $absen): ?>
-                    <div class="task-card">
-                        <div class="task-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg></div>
-                        <div class="task-content">
-                            <h3>
-                                Absensi Pertemuan — <?php echo htmlspecialchars($absen['kelas']); ?>
-                                <span class="task-badge"><?php echo htmlspecialchars($absen['tanggal']); ?></span>
-                                <?php if($absen['status_sesi'] == 'Dibuka'): ?>
-                                    <span class="status-badge badge-green" style="margin-left: 6px;">Dibuka</span>
-                                <?php else: ?>
-                                    <span class="status-badge badge-red" style="margin-left: 6px;">Ditutup</span>
-                                <?php endif; ?>
-                            </h3>
-                            <p>Waktu: <?php echo $absen['jam_mulai']; ?> - <?php echo $absen['jam_selesai']; ?> WIB</p>
+                    <?php if (empty($list_absensi)): ?>
+                        <p style="color: var(--muted); font-size: 13px;">Belum ada sesi absensi yang dibuat.</p>
+                    <?php else: ?>
+                        <?php foreach ($list_absensi as $absen): ?>
+                        <div class="task-card">
+                            <div class="task-icon">📅</div>
+                            <div class="task-content">
+                                <h3>
+                                    <?php echo htmlspecialchars($absen['judul_absensi']); ?>
+                                    <span class="task-badge"><?php echo htmlspecialchars($absen['kelas']); ?></span>
+                                </h3>
+                                <p>Tanggal: <?php echo htmlspecialchars($absen['tanggal']); ?></p>
+                            </div>
                         </div>
-                        <button class="task-action" onclick="openModal('modalRekapAbsensi')">Cek Rekap Hadir</button>
-                    </div>
-                    <?php endforeach; ?>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
             </section>
 
@@ -505,7 +422,7 @@ textarea.form-control{ resize:vertical; min-height:100px; }
             <section id="buat-tugas" style="margin-top: 30px;">
                 <div class="section-head"><div><h2>Buat Tugas / Materi Baru</h2><p>Publikasikan tugas baru ke siswa.</p></div></div>
                 
-                <form action="guru.php" method="POST" enctype="multipart/form-data" class="form-card">
+                <form action="guru.php" method="POST" class="form-card">
                     <input type="hidden" name="aksi" value="tambah">
                     <div class="form-group">
                         <label>Judul Tugas</label>
@@ -514,10 +431,10 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                     <div class="form-row">
                         <div class="form-group">
                             <label>Pilih Kelas</label>
-                            <select name="kelas" class="form-control" required>
+                            <select name="kelas_id" class="form-control" required>
                                 <option value="" disabled selected>-- Pilih Kelas --</option>
-                                <?php foreach ($_SESSION['list_kelas'] as $kls): ?>
-                                    <option value="<?php echo $kls['nama_kelas']; ?>"><?php echo $kls['nama_kelas']; ?></option>
+                                <?php foreach ($list_kelas as $kls): ?>
+                                    <option value="<?php echo $kls['id_kelas']; ?>"><?php echo htmlspecialchars($kls['nama_kelas']); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -530,10 +447,6 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                         <label>Instruksi Pengerjaan</label>
                         <textarea name="deskripsi" class="form-control" placeholder="Tuliskan detail tugas..." required></textarea>
                     </div>
-                    <div class="form-group">
-                        <label>Lampiran File (Opsional)</label>
-                        <input type="file" name="lampiran_guru" class="form-control" accept=".doc,.docx,.xls,.xlsx,.pdf,.zip" style="padding: 9px 16px;">
-                    </div>
                     <button type="submit" class="btn btn-yellow" style="width:100%; margin-top:10px;">Publikasikan Tugas</button>
                 </form>
             </section>
@@ -543,34 +456,25 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                 <div class="section-head"><div><h2>Tugas Terkirim</h2><p>Daftar tugas yang berhasil dipublikasikan.</p></div></div>
 
                 <div class="task-list">
-                    <?php foreach ($_SESSION['list_tugas'] as $tugas) : 
-                        $status_lewat = ($tugas['deadline'] < $waktu_sekarang);
-                    ?>
-                    <div class="task-card">
-                        <div class="task-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
-                        <div class="task-content">
-                            <h3>
-                                <?php echo htmlspecialchars($tugas['judul'] ?? ''); ?> 
-                                <span class="task-badge"><?php echo htmlspecialchars($tugas['kelas'] ?? ''); ?></span>
-                                <?php if($status_lewat): ?>
-                                    <span class="status-badge badge-red" style="margin-left: 6px;">Ditutup (Lewat Tenggat)</span>
-                                <?php else: ?>
-                                    <span class="status-badge badge-green" style="margin-left: 6px;">Aktif</span>
-                                <?php endif; ?>
-                            </h3>
-                            <p>Tenggat: <?php echo htmlspecialchars($tugas['deadline'] ?? ''); ?> • <strong style="color:var(--text);"><?php echo htmlspecialchars($tugas['kumpul'] ?? '0/36 Kumpul'); ?></strong></p>
+                    <?php if (empty($list_tugas)): ?>
+                        <p style="color: var(--muted); font-size: 13px;">Belum ada tugas yang dikirimkan.</p>
+                    <?php else: ?>
+                        <?php foreach ($list_tugas as $tugas) : ?>
+                        <div class="task-card">
+                            <div class="task-icon">📌</div>
+                            <div class="task-content">
+                                <h3>
+                                    <?php echo htmlspecialchars($tugas['judul'] ?? ''); ?> 
+                                    <span class="task-badge"><?php echo htmlspecialchars($tugas['kelas'] ?? ''); ?></span>
+                                </h3>
+                                <p>Tenggat: <?php echo htmlspecialchars($tugas['deadline'] ?? ''); ?> • <strong><?php echo htmlspecialchars($tugas['kumpul'] ?? '0/36 Kumpul'); ?></strong></p>
+                            </div>
                         </div>
-                        <button class="task-action" onclick="bukaDetailTugas(
-                            '<?php echo $tugas['id'] ?? ''; ?>', 
-                            '<?php echo addslashes($tugas['judul'] ?? ''); ?>', 
-                            '<?php echo addslashes($tugas['kelas'] ?? ''); ?>', 
-                            '<?php echo addslashes($tugas['deadline'] ?? ''); ?>', 
-                            '<?php echo addslashes($tugas['deskripsi'] ?? ''); ?>'
-                        )">Lihat & Nilai</button>
-                    </div>
-                    <?php endforeach; ?>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
             </section>
+
         </div>
 
         <aside class="sidebar">
@@ -590,10 +494,6 @@ textarea.form-control{ resize:vertical; min-height:100px; }
                         <span class="label">Email</span>
                         <span class="value"><?php echo htmlspecialchars($email_guru); ?></span>
                     </div>
-                    <div class="item">
-                        <span class="label">Jenis / Level</span>
-                        <span class="value"><?php echo htmlspecialchars('guru • ' . $level_guru); ?></span>
-                    </div>
                 </div>
             </div>
         </aside>
@@ -601,146 +501,5 @@ textarea.form-control{ resize:vertical; min-height:100px; }
 </div>
 </main>
 
-<!-- MODAL DETAIL TUGAS -->
-<div class="modal-overlay" id="modalDetailTugas">
-    <div class="modal-content" style="max-width: 950px;">
-        <button class="btn-close" onclick="closeModal('modalDetailTugas')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-        <h2 style="font-family:var(--font-h); font-size:22px; margin-bottom: 20px;">Manajemen Tugas & Konfirmasi Susulan</h2>
-
-        <div class="task-review-box" id="infoTugasBox" style="background:var(--bg-soft); border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:24px;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-                <div>
-                    <h3 id="modalJudulTugas" style="font-family:var(--font-h); font-size:18px;">Judul Tugas</h3>
-                    <span id="modalMetaTugas" style="font-size: 12px; color: var(--muted);">Kelas & Tenggat</span>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-sm btn-outline" onclick="aktifkanFormEdit()">Edit Tugas</button>
-                    <a id="btnHapusTugas" href="#" class="btn btn-sm btn-danger" onclick="return confirm('Yakin ingin menghapus tugas ini?')">Hapus</a>
-                </div>
-            </div>
-            <p id="modalDescTugas" style="font-size: 13px; color: var(--muted);">Deskripsi tugas...</p>
-        </div>
-
-        <form id="formEditTugas" action="guru.php" method="POST" class="form-card" style="display: none; margin-bottom: 24px; border-color: var(--yellow);">
-            <input type="hidden" name="aksi" value="edit">
-            <input type="hidden" name="id_tugas" id="editIdTugas">
-            <h3 style="font-family:var(--font-h); font-size:16px; margin-bottom:12px;">Edit Informasi Tugas</h3>
-            <div class="form-group">
-                <label>Judul Tugas</label>
-                <input type="text" name="judul_tugas" id="editJudul" class="form-control" required>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Pilih Kelas</label>
-                    <select name="kelas" id="editKelas" class="form-control" required>
-                        <?php foreach ($_SESSION['list_kelas'] as $kls): ?>
-                            <option value="<?php echo $kls['nama_kelas']; ?>"><?php echo $kls['nama_kelas']; ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Batas Waktu</label>
-                    <input type="datetime-local" name="deadline" id="editDeadline" class="form-control" required>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Instruksi Pengerjaan</label>
-                <textarea name="deskripsi" id="editDeskripsi" class="form-control" required></textarea>
-            </div>
-            <div style="display: flex; gap: 10px;">
-                <button type="submit" class="btn btn-yellow">Simpan Perubahan</button>
-                <button type="button" class="btn btn-outline" onclick="batalEdit()">Batal</button>
-            </div>
-        </form>
-
-        <h3 style="font-family:var(--font-h); font-size:16px; margin-bottom: 12px;">Daftar Pengumpulan & Permintaan Akses Susulan</h3>
-        <div class="data-table-container">
-            <table class="data-table">
-                <thead><tr><th>Nama Murid</th><th>Status Pengiriman</th><th>Aksi / Konfirmasi Guru</th></tr></thead>
-                <tbody>
-                    <tr>
-                        <td><strong>Citra Kirana</strong><br><span style="font-size:11px; color:var(--muted);">Terlambat • Belum mengumpulkan</span></td>
-                        <td><span class="status-badge badge-yellow">Menunggu Konfirmasi Akses</span></td>
-                        <td>
-                            <button class="btn btn-sm btn-yellow" onclick="alert('Akses diberikan! Citra Kirana sekarang bisa mengumpulkan tugas.')">Setujui Akses Susulan</button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><strong>Andhini</strong><br><span style="font-size:11px; color:var(--muted);">Tepat Waktu</span></td>
-                        <td><span class="status-badge badge-green">Sudah Dikumpulkan</span></td>
-                        <td><span style="font-size: 12px; color: var(--muted);">Sudah Dinilai (92)</span></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<!-- MODAL BUKU NILAI -->
-<div class="modal-overlay" id="modalBukuNilai"><div class="modal-content"><button class="btn-close" onclick="closeModal('modalBukuNilai')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button><h2>Buku Nilai</h2></div></div>
-
-<!-- MODAL REKAP ABSENSI -->
-<div class="modal-overlay" id="modalRekapAbsensi">
-    <div class="modal-content">
-        <button class="btn-close" onclick="closeModal('modalRekapAbsensi')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-        <h2 style="font-family:var(--font-h); font-size:22px; margin-bottom: 6px;">Rekap Kehadiran Murid</h2>
-        <p style="color:var(--muted); font-size:13px; margin-bottom: 20px;">Pantau status kehadiran siswa secara berkala.</p>
-        <div class="data-table-container">
-            <table class="data-table">
-                <thead><tr><th>Nama Murid</th><th>Waktu Absen</th><th>Status Kehadiran</th></tr></thead>
-                <tbody>
-                    <tr><td><strong>Andhini</strong></td><td>07:10 WIB</td><td><span class="status-badge badge-green">Hadir</span></td></tr>
-                    <tr><td><strong>Bima Aditya</strong></td><td>07:15 WIB</td><td><span class="status-badge badge-green">Hadir</span></td></tr>
-                    <tr><td><strong>Citra Kirana</strong></td><td>-</td><td><span class="status-badge badge-red">Alpa / Belum Absen</span></td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
-
-<!-- MODAL PENGUMUMAN -->
-<div class="modal-overlay" id="modalPengumuman"><div class="modal-content sm"><button class="btn-close" onclick="closeModal('modalPengumuman')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button><h2>Buat Pengumuman</h2></div></div>
-
-<!-- MODAL EKSPOR DATA -->
-<div class="modal-overlay" id="modalEksporData"><div class="modal-content sm"><button class="btn-close" onclick="closeModal('modalEksporData')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button><h2>Ekspor Data</h2></div></div>
-
-<script>
-    function openModal(modalId) { document.getElementById(modalId).classList.add('active'); document.body.style.overflow = 'hidden'; }
-    function closeModal(modalId) { document.getElementById(modalId).classList.remove('active'); document.body.style.overflow = 'auto'; }
-
-    function bukaDetailTugas(id, judul, kelas, deadline, deskripsi) {
-        document.getElementById('modalJudulTugas').innerText = judul;
-        document.getElementById('modalMetaTugas').innerHTML = 'Dikirim ke: <strong>' + kelas + '</strong> • Tenggat: ' + deadline;
-        document.getElementById('modalDescTugas').innerText = deskripsi;
-        
-        document.getElementById('btnHapusTugas').href = 'guru.php?hapus_id=' + id;
-
-        document.getElementById('editIdTugas').value = id;
-        document.getElementById('editJudul').value = judul;
-        document.getElementById('editKelas').value = kelas;
-        document.getElementById('editDeadline').value = deadline.replace(' ', 'T');
-        document.getElementById('editDeskripsi').value = deskripsi;
-
-        document.getElementById('infoTugasBox').style.display = 'block';
-        document.getElementById('formEditTugas').style.display = 'none';
-
-        openModal('modalDetailTugas');
-    }
-
-    function aktifkanFormEdit() {
-        document.getElementById('infoTugasBox').style.display = 'none';
-        document.getElementById('formEditTugas').style.display = 'block';
-    }
-
-    function batalEdit() {
-        document.getElementById('infoTugasBox').style.display = 'block';
-        document.getElementById('formEditTugas').style.display = 'none';
-    }
-
-    window.onclick = function(event) {
-        let modals = document.getElementsByClassName('modal-overlay');
-        for (let i = 0; i < modals.length; i++) { if (event.target == modals[i]) { modals[i].classList.remove('active'); document.body.style.overflow = 'auto'; } }
-    }
-</script>
 </body>
 </html>

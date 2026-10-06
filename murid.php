@@ -2843,6 +2843,13 @@ footer{
                                 🔑 <?= htmlspecialchars($kelas['kode_gabung']) ?>
                             </span>
 
+                            <!-- Tombol Langsung Pindah ke kelas.php -->
+                            <div style="margin-top: 14px;">
+                                <a href="kelas.php?id=<?= $kelas['id'] ?>" class="btn btn-yellow" style="width: 100%; padding: 10px; font-size: 12px; text-align: center; display: block;">
+                                    Buka Halaman Kelas →
+                                </a>
+                            </div>
+
                         </article>
 
                     <?php endforeach; ?>
