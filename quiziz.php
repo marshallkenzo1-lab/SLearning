@@ -116,7 +116,7 @@ if ($qid===0) {
     <article class="quiz-card"><div class="quiz-top"><span class="quiz-label"><?= e(mb_strtoupper(mb_substr($z['nama_kelas']??$z['kelas']??'KELAS',0,14))) ?></span><span class="quiz-time"><?= svg_icon('clock',13) ?> <?= (int)$z['durasi_menit'] ?> mnt</span></div>
     <h3><?= e($z['judul']) ?></h3><p><?= $z['deskripsi']?e(mb_strimwidth($z['deskripsi'],0,90,'...')):((int)$z['jml']).' soal pilihan ganda.' ?></p>
     <div class="quiz-bottom"><span><?= (int)$z['jml'] ?> soal<?php if($jenis==='guru') echo ' • '.(int)$z['peserta'].' peserta'; elseif(!empty($z['dikerjakan_at'])) echo ' • Skor <strong>'.(int)$z['skor'].'</strong>'; ?></span>
-    <?php if($jenis==='guru'): ?><a class="link-more" href="quiziz.php?id=<?= (int)$z['id'] ?>">Pratinjau <?= svg_icon('arrow-right',14) ?></a>
+    <?php if($jenis==='guru'): ?><a class="link-more" href="quiziz_muridgit .php?id=<?= (int)$z['id'] ?>">Pratinjau <?= svg_icon('arrow-right',14) ?></a>
     <?php else: if(!empty($z['dikerjakan_at'])): ?><a class="link-more" href="quiziz.php?id=<?= (int)$z['id'] ?>&hasil=1">Lihat hasil <?= svg_icon('arrow-right',14) ?></a><?php else: ?><a class="link-more" href="quiziz.php?id=<?= (int)$z['id'] ?>">Kerjakan <?= svg_icon('arrow-right',14) ?></a><?php endif; endif; ?></div></article>
   <?php endforeach; ?></div><?php endif; ?>
 
