@@ -1,5 +1,5 @@
 <?php
-// SLearning — Dashboard Guru (FULL VERSION - Tidak ada yang di-cut)
+// SLearning — Dashboard Guru (FULL VERSION - Live Quiz dengan Sistem 8 Detik/Soal)
 session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
@@ -123,10 +123,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         $judul_kuis = trim($_POST['judul_kuis'] ?? 'Kuis Baru');
         $kelas_id = (int)($_POST['kelas_id'] ?? 0);
         $mode_kuis = 'Live Quiz'; 
-        $durasi = (int)($_POST['durasi'] ?? 60);
+        // Durasi di-set 0 karena sekarang menggunakan sistem timer per-soal di sisi murid
+        $durasi = 0; 
 
         if ($judul_kuis !== '' && $kelas_id > 0) {
-            $sq = mysqli_prepare($koneksi, "INSERT INTO quiz (guru_id, kelas_id, judul, mode_kuis, durasi_menit) VALUES (?, ?, ?, ?, ?)");
+            $sq = mysqli_prepare($koneksi, "INSERT INTO quiz (guru_id, kelas_id, judul, mode_kuis, durasi_menit, status) VALUES (?, ?, ?, ?, ?, 'menunggu')");
             if($sq){
                 mysqli_stmt_bind_param($sq, "iissi", $user_id, $kelas_id, $judul_kuis, $mode_kuis, $durasi);
                 mysqli_stmt_execute($sq);
@@ -136,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
                 flash_set('Kuis berhasil dibuat! Silakan mulai menambahkan soal di bawah ini.');
                 header("Location: guru.php?page=kelola_soal&quiz_id=" . $new_quiz_id); exit;
             } else {
-                flash_set('Gagal membuat kuis. Pastikan kolom database sudah sesuai.', 'error');
+                flash_set('Gagal membuat kuis. Pastikan kolom database sudah sesuai (Tambahkan kolom status).', 'error');
                 header("Location: guru.php?page=quiz"); exit;
             }
         }
@@ -186,6 +187,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         flash_set('Soal berhasil dihapus.');
         header("Location: guru.php?page=kelola_soal&quiz_id=".$q_id); exit;
     }
+
+    // Aksi Mengubah Status Kuis (Mulai / Akhiri)
+    if ($aksi === 'ubah_status_kuis') {
+        $q_id = (int)$_POST['quiz_id'];
+        $status_baru = $_POST['status_baru'];
+        
+        $upd_status = mysqli_prepare($koneksi, "UPDATE quiz SET status = ? WHERE id = ? AND guru_id = ?");
+        if ($upd_status) {
+            mysqli_stmt_bind_param($upd_status, "sii", $status_baru, $q_id, $user_id);
+            mysqli_stmt_execute($upd_status);
+            mysqli_stmt_close($upd_status);
+            if ($status_baru === 'mulai') { flash_set('Kuis telah dimulai! Siswa sekarang dapat mengerjakan soal secara serentak.'); }
+            else if ($status_baru === 'selesai') { flash_set('Kuis telah diakhiri.'); }
+        }
+        header("Location: guru.php?page=live_monitor&quiz_id=".$q_id); exit;
+    }
 }
 
 // Ambil Data User
@@ -218,6 +235,10 @@ if ($page === 'beranda') {
 <html lang="id">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- AUTO REFRESH HANYA UNTUK HALAMAN LIVE MONITOR (Tiap 5 Detik) -->
+<?php if($page === 'live_monitor'): ?>
+<meta http-equiv="refresh" content="5">
+<?php endif; ?>
 <title>Dashboard Guru — Slearning</title>
 <link rel="icon" type="image/png" href="assets/img/logo-smkn7.png">
 <style>
@@ -314,7 +335,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .badge-merah { background: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2; }
 .form-penilaian-inline { display: flex; gap: 8px; align-items: center; background: #FAFCFA; padding: 12px; border-radius: 12px; border: 1px solid var(--sage-100); }
 
-/* CSS QUIZ BUILDER */
+/* CSS QUIZ BUILDER & LIVE MONITOR */
 .quiz-builder-container { display: grid; grid-template-columns: 2.2fr 1fr; gap: 24px; align-items: start; }
 .builder-main { display: flex; flex-direction: column; gap: 24px; }
 .builder-sidebar { position: sticky; top: 20px; background: #fff; border-radius: var(--radius-md); padding: 24px; border: 1px solid var(--sage-100); box-shadow: var(--shadow-sm); }
@@ -335,6 +356,16 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .sidebar-info-item svg { width: 24px; height: 24px; color: var(--sage-500); flex-shrink: 0; }
 .sidebar-info-item div p { font-size: 12px; color: var(--sage-600); margin-bottom: 2px; }
 .sidebar-info-item div h4 { font-size: 14px; font-weight: 700; color: var(--sage-800); }
+
+.table-leaderboard { width: 100%; border-collapse: collapse; background: #fff; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); border: 1px solid var(--sage-50); }
+.table-leaderboard th { background: var(--sage-50); padding: 16px; text-align: left; font-size: 14px; font-weight: 800; color: var(--sage-800); border-bottom: 2px solid var(--sage-100); }
+.table-leaderboard td { padding: 16px; border-bottom: 1px solid var(--sage-50); font-size: 14px; color: var(--sage-900); font-weight: 600; }
+.table-leaderboard tr:last-child td { border-bottom: none; }
+.table-leaderboard tr:hover { background: #FAFCFA; }
+.rank-badge { display: inline-flex; width: 28px; height: 28px; background: var(--sage-100); color: var(--sage-800); border-radius: 50%; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; }
+.rank-1 { background: #FFD700; color: #856404; box-shadow: 0 2px 6px rgba(255, 215, 0, 0.4); }
+.rank-2 { background: #C0C0C0; color: #383d41; }
+.rank-3 { background: #CD7F32; color: #721c24; }
 
 @media (max-width: 900px) {
     .quiz-builder-container { grid-template-columns: 1fr; }
@@ -377,7 +408,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     <a href="guru.php?page=kelas" class="nav-tab <?= $page==='kelas' || $page==='detail_kelas'?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg> <span>Kelas</span></a>
     <a href="guru.php?page=absensi" class="nav-tab <?= $page==='absensi'?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 16 2 2 4-4"/></svg> <span>Absensi</span></a>
     <a href="guru.php?page=tugas" class="nav-tab <?= $page==='tugas'?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> <span>Tugas</span></a>
-    <a href="guru.php?page=quiz" class="nav-tab <?= ($page==='quiz' || $page==='kelola_soal')?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="9" y1="10" x2="9.01" y2="10"/></svg> <span>Quiz</span></a>
+    <a href="guru.php?page=quiz" class="nav-tab <?= ($page==='quiz' || $page==='kelola_soal' || $page==='live_monitor')?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="9" y1="10" x2="9.01" y2="10"/></svg> <span>Quiz</span></a>
   </nav>
 </header>
 
@@ -403,7 +434,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     </div>
 
     <div class="dashboard-panels">
-        <!-- Panel Tugas Belum Dinilai -->
         <div class="panel">
             <div class="panel-header"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#E07A5F" stroke-width="2.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Tugas Perlu Dinilai</div>
             <?php if ($notif_error): ?>
@@ -422,7 +452,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
             <?php endif; ?>
         </div>
 
-        <!-- Panel Pantauan Absensi Hari Ini -->
         <div class="panel">
             <div class="panel-header"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Absensi Murid Hari Ini</div>
             <?php if (empty($absen_hari_ini)): ?>
@@ -751,10 +780,18 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                 </select>
             </div>
         </div>
-        <div style="margin-bottom: 24px;">
-            <label class="form-label">Total Durasi Pengerjaan Kuis (Menit)</label>
-            <input type="number" name="durasi" class="input-elegant" placeholder="Contoh: 45" style="max-width: 300px;" required>
+        
+        <!-- Banner Informasi Sistem Waktu Baru -->
+        <div style="margin-bottom: 24px; padding: 16px; background: #FFF8D6; border: 1px dashed #E2D38A; border-radius: 8px; font-size: 13.5px; color: var(--sage-900); display: flex; gap: 12px; align-items: flex-start;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#E07A5F" stroke-width="2" width="24" height="24" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <div>
+                <strong style="display:block; margin-bottom:4px; font-size:14px; color:var(--sage-800);">Sistem Waktu Baru Diterapkan (Live Mode)</strong>
+                Durasi keseluruhan telah ditiadakan. Kuis akan menggunakan <strong>timer per soal</strong> di layar murid:<br>
+                ⏳ <strong>3 Detik</strong> awal untuk membaca soal (tombol terkunci).<br>
+                ✅ <strong>5 Detik</strong> untuk memilih jawaban, lalu otomatis lanjut ke soal berikutnya.
+            </div>
         </div>
+
         <button type="submit" class="btn-primary">Selanjutnya: Buat Soal Kuis →</button>
       </form>
     </div>
@@ -763,27 +800,31 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     <h3 class="section-title">Riwayat & Daftar Kuis Anda</h3>
     <?php 
       $list_kuis = [];
-      $qk = mysqli_query($koneksi, "SELECT q.id, q.judul, k.nama_kelas AS kelas, q.durasi_menit, (SELECT COUNT(*) FROM quiz_soal qs WHERE qs.quiz_id = q.id) AS total_soal FROM quiz q JOIN kelas k ON q.kelas_id = k.id WHERE q.guru_id = $user_id ORDER BY q.id DESC");
+      $qk = mysqli_query($koneksi, "SELECT q.id, q.judul, k.nama_kelas AS kelas, q.durasi_menit, (SELECT COUNT(*) FROM quiz_soal qs WHERE qs.quiz_id = q.id) AS total_soal, q.status FROM quiz q JOIN kelas k ON q.kelas_id = k.id WHERE q.guru_id = $user_id ORDER BY q.id DESC");
       if($qk) { while ($rk = mysqli_fetch_assoc($qk)) { $list_kuis[] = $rk; } }
     ?>
     <?php if (empty($list_kuis)): ?>
         <div class="empty-state"><p>Belum ada kuis yang dibuat.</p></div>
     <?php else: ?>
         <div class="class-grid">
-            <?php foreach ($list_kuis as $quiz): ?>
+            <?php foreach ($list_kuis as $quiz): 
+                $status_k = $quiz['status'] ?? 'menunggu';
+            ?>
             <div class="class-card">
                 <h4 style="font-size: 16px; font-weight: 800; color: var(--sage-800); margin-bottom: 6px;"><?= e($quiz['judul']) ?></h4>
                 <p style="font-size: 13px; color: var(--sage-600); margin-bottom: 4px;">📍 Kelas: <strong><?= e($quiz['kelas']) ?></strong></p>
                 <p style="font-size: 13px; color: var(--sage-600); margin-bottom: 20px;">
-                   ⏱️ Durasi: <?= (int)$quiz['durasi_menit'] ?> Menit | 📝 Total Soal: <strong><?= (int)$quiz['total_soal'] ?></strong>
+                   ⏱️ Waktu: 8 Detik / Soal | 📝 Soal: <strong><?= (int)$quiz['total_soal'] ?></strong>
+                   <br><br>
+                   <span class="badge-status <?= $status_k === 'menunggu' ? 'badge-merah' : 'badge-hijau' ?>">Status: <?= strtoupper($status_k) ?></span>
                 </p>
 
                 <div style="display: flex; flex-direction: column; gap: 8px; margin-top: auto;">
                     <a href="guru.php?page=kelola_soal&quiz_id=<?= $quiz['id'] ?>" class="btn-primary" style="justify-content: center; font-size: 12px; padding: 10px; background: var(--sage-500); width: 100%;">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Kelola Pertanyaan
                     </a>
-                    <a href="guru.php?page=live_quiz&quiz_id=<?= $quiz['id'] ?>" class="btn-primary" style="justify-content: center; font-size: 12px; padding: 10px; background: #E07A5F; margin-top: 4px; border: 1px solid #D66D52;">
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg> Mulai Live Quiz Sekarang
+                    <a href="guru.php?page=live_monitor&quiz_id=<?= $quiz['id'] ?>" class="btn-primary" style="justify-content: center; font-size: 12px; padding: 10px; background: #E07A5F; margin-top: 4px; border: 1px solid #D66D52;">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Lihat Peserta & Mulai Live
                     </a>
                     <form method="POST" onsubmit="return confirm('Yakin menghapus kuis ini dari riwayat?')" style="margin-top: 6px;">
                         <input type="hidden" name="aksi" value="hapus_kuis">
@@ -896,7 +937,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
             </div>
             <div class="sidebar-info-item">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                <div><p>Durasi Pengerjaan</p><h4><?= (int)$quiz_info['durasi_menit'] ?> Menit</h4></div>
+                <div><p>Sistem Waktu</p><h4>8 Detik / Soal (Live)</h4></div>
             </div>
             <div class="sidebar-info-item">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -906,6 +947,105 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
             <a href="guru.php?page=quiz" class="btn-outline" style="width: 100%; justify-content: center; margin-top: 32px;">Selesai & Tutup</a>
         </div>
     </div>
+    <?php endif; ?>
+
+  <!-- ================= HALAMAN LOBI & LIVE MONITOR ================= -->
+  <?php elseif ($page === 'live_monitor' && $quiz_id_get > 0): ?>
+    <?php
+    $q_info = mysqli_query($koneksi, "SELECT q.*, k.nama_kelas, (SELECT COUNT(*) FROM anggota_kelas ak WHERE ak.kelas_id=q.kelas_id) as total_murid_kelas FROM quiz q JOIN kelas k ON q.kelas_id=k.id WHERE q.id=$quiz_id_get AND q.guru_id=$user_id LIMIT 1");
+    $quiz_info = $q_info ? mysqli_fetch_assoc($q_info) : null;
+    
+    if(!$quiz_info): ?>
+        <div class="empty-state"><p>Data kuis tidak ditemukan atau Anda tidak berhak mengaksesnya.</p></div>
+    <?php else: 
+        $status_saat_ini = @$quiz_info['status'] ?: 'menunggu'; 
+    ?>
+        <div style="margin-bottom: 24px; display:flex; justify-content: space-between; align-items:center;">
+            <div>
+                <a href="guru.php?page=quiz" style="display:inline-flex; align-items:center; gap:6px; color:var(--sage-600); text-decoration:none; font-weight:700; font-size:14px; margin-bottom:12px;">← Kembali ke Dashboard Kuis</a>
+                <h2 style="font-size: 24px; font-weight: 800; color: var(--sage-800);">Live Monitor: <?= e($quiz_info['judul']) ?></h2>
+            </div>
+            <div>
+                <span class="badge-status <?= $status_saat_ini === 'mulai' ? 'badge-hijau' : 'badge-merah' ?>" style="font-size: 14px; padding: 8px 16px;">Status: <?= strtoupper($status_saat_ini) ?></span>
+            </div>
+        </div>
+
+        <?php if ($status_saat_ini === 'menunggu'): ?>
+            <!-- VIEW LOBI (Ruang Tunggu) -->
+            <div class="card-manage" style="text-align: center; padding: 60px 20px;">
+                <svg viewBox="0 0 24 24" width="60" height="60" fill="none" stroke="var(--sage-500)" stroke-width="2" style="margin-bottom: 20px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <h2 style="font-size: 28px;">Menunggu Siswa...</h2>
+                <p style="font-size: 16px; margin-bottom: 30px;">Kuis ini untuk <strong><?= e($quiz_info['nama_kelas']) ?></strong>. Total Siswa di kelas: <strong><?= (int)$quiz_info['total_murid_kelas'] ?> Siswa</strong>.</p>
+                
+                <form method="POST">
+                    <input type="hidden" name="aksi" value="ubah_status_kuis">
+                    <input type="hidden" name="quiz_id" value="<?= $quiz_id_get ?>">
+                    <input type="hidden" name="status_baru" value="mulai">
+                    <button type="submit" class="btn-primary" style="font-size: 16px; padding: 16px 32px; background: #E07A5F;">▶️ Mulai Kuis Serentak Sekarang!</button>
+                </form>
+            </div>
+        <?php else: ?>
+            <!-- VIEW LIVE LEADERBOARD -->
+            <div class="card-manage">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="font-size: 18px; font-weight: 800; color: var(--sage-800);">Papan Peringkat Real-Time</h3>
+                    <?php if($status_saat_ini === 'mulai'): ?>
+                    <form method="POST" onsubmit="return confirm('Apakah Anda yakin ingin mengakhiri kuis ini sekarang?')">
+                        <input type="hidden" name="aksi" value="ubah_status_kuis">
+                        <input type="hidden" name="quiz_id" value="<?= $quiz_id_get ?>">
+                        <input type="hidden" name="status_baru" value="selesai">
+                        <button type="submit" class="btn-primary" style="background: var(--sage-800); box-shadow: none;">⏹️ Akhiri Kuis</button>
+                    </form>
+                    <?php endif; ?>
+                </div>
+                
+                <?php if($status_saat_ini === 'selesai'): ?>
+                    <div class="alert success" style="margin-top: 16px;">Kuis telah diakhiri. Berikut adalah hasil akhir para murid.</div>
+                <?php else: ?>
+                    <p style="font-size: 13px; color: var(--sage-600); margin-top: 6px;">Halaman ini akan diperbarui otomatis setiap 5 detik.</p>
+                <?php endif; ?>
+
+                <?php 
+                $q_leaderboard = mysqli_query($koneksi, "
+                    SELECT l.nama, qh.benar, qh.total, qh.skor 
+                    FROM quiz_hasil qh 
+                    JOIN login l ON qh.user_id = l.id 
+                    WHERE qh.quiz_id = $quiz_id_get 
+                    ORDER BY qh.skor DESC, qh.dikerjakan_at ASC
+                ");
+                ?>
+                
+                <table class="table-leaderboard">
+                    <thead>
+                        <tr>
+                            <th width="80">Peringkat</th>
+                            <th>Nama Murid</th>
+                            <th style="text-align:center;">Jumlah Benar</th>
+                            <th style="text-align:center;">Jumlah Salah</th>
+                            <th style="text-align:center;">Skor</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (mysqli_num_rows($q_leaderboard) === 0): ?>
+                            <tr><td colspan="5" style="text-align:center; padding: 30px;">Belum ada murid yang mulai mengerjakan (atau selesai).</td></tr>
+                        <?php else: $rank = 1; while ($row = mysqli_fetch_assoc($q_leaderboard)): 
+                            $jml_salah = (int)$row['total'] - (int)$row['benar'];
+                            $rank_class = '';
+                            if($rank == 1) $rank_class = 'rank-1'; else if($rank == 2) $rank_class = 'rank-2'; else if($rank == 3) $rank_class = 'rank-3';
+                        ?>
+                            <tr>
+                                <td style="text-align:center;"><span class="rank-badge <?= $rank_class ?>"><?= $rank ?></span></td>
+                                <td><?= e($row['nama']) ?></td>
+                                <td style="text-align:center; color: #2E7D32; font-weight:800;"><?= (int)$row['benar'] ?></td>
+                                <td style="text-align:center; color: #C62828; font-weight:800;"><?= $jml_salah ?></td>
+                                <td style="text-align:center; font-size:16px; font-weight:800; color:var(--sage-800);"><?= (int)$row['skor'] ?></td>
+                            </tr>
+                        <?php $rank++; endwhile; endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
+
     <?php endif; ?>
 
   <?php endif; ?>
