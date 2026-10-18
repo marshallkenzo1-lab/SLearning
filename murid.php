@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['isi_absen'])) {
     header('Location: murid.php?page=absensi'); exit;
 }
 
-// 3. PROSES UPLOAD / KUMPULKAN TUGAS (DENGAN DEBUGGING ERROR DATABASE)
+// 3. PROSES UPLOAD / KUMPULKAN TUGAS
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['kumpulkan_tugas'])) {
     $tid = (int)($_POST['tugas_id'] ?? 0);
     $s = mysqli_prepare($koneksi, "SELECT t.id FROM tugas t JOIN anggota_kelas ak ON ak.kelas_id=t.kelas_id WHERE t.id=? AND ak.user_id=? LIMIT 1");
@@ -126,7 +126,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['kumpulkan_tugas'])) {
             $dbp = 'uploads/tugas/'.$baru;
             
             if (move_uploaded_file($f['tmp_name'], $lok)) {
-                // Periksa apakah data pengumpulan sudah ada berdasarkan tugas_id dan user_id
                 $s = mysqli_prepare($koneksi, "SELECT id, file_path FROM pengumpulan_tugas WHERE tugas_id=? AND user_id=? LIMIT 1");
                 mysqli_stmt_bind_param($s,'ii',$tid,$uid); mysqli_stmt_execute($s);
                 $lama = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
@@ -140,7 +139,6 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['kumpulkan_tugas'])) {
                     mysqli_stmt_bind_param($s,'iiss',$tid,$uid,$f['name'],$dbp);
                 }
                 
-                // Eksekusi statement dan tangkap error database jika gagal
                 if (mysqli_stmt_execute($s)) {
                     set_flash_notification('Tugas berhasil dikumpulkan!', 'success', 'Berhasil');
                 } else {
