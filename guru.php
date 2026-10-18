@@ -7,6 +7,33 @@ require_once __DIR__ . '/config/helpers.php';
 if (!isset($_SESSION['user_id']) || ($_SESSION['jenis'] ?? '') === 'murid') { header("Location: login.php"); exit; }
 $user_id = (int)$_SESSION['user_id'];
 
+// AUTO-MIGRASI: Buat tabel lobi kuis jika belum ada
+$cek_lobby = mysqli_query($koneksi, "SHOW TABLES LIKE 'quiz_lobby'");
+if(mysqli_num_rows($cek_lobby) === 0) {
+    mysqli_query($koneksi, "CREATE TABLE quiz_lobby (
+        quiz_id INT NOT NULL, 
+        user_id INT NOT NULL, 
+        waktu TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, 
+        PRIMARY KEY(quiz_id, user_id)
+    )");
+}
+
+// =========================================================================
+// API GURU: Tarik jumlah murid di lobi secara Real-Time
+// =========================================================================
+if (isset($_GET['page']) && $_GET['page'] === 'api_cek_lobby') {
+    $qid = (int)$_GET['quiz_id'];
+    // Hapus murid yang terputus/keluar dari halaman lobi (tidak ada ping lebih dari 10 detik)
+    mysqli_query($koneksi, "DELETE FROM quiz_lobby WHERE waktu < (NOW() - INTERVAL 10 SECOND)");
+    // Hitung sisa murid yang aktif
+    $q_jml = mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM quiz_lobby WHERE quiz_id = $qid");
+    $jml = $q_jml ? mysqli_fetch_assoc($q_jml)['jml'] : 0;
+    header('Content-Type: application/json');
+    echo json_encode(['jumlah' => (int)$jml]);
+    exit;
+}
+// =========================================================================
+
 $page = $_GET['page'] ?? 'beranda';
 $detail_kelas_id = (int)($_GET['id'] ?? 0);
 $quiz_id_get = (int)($_GET['quiz_id'] ?? 0);
@@ -145,6 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
 
     if ($aksi === 'hapus_kuis') {
         $quiz_id = (int)($_POST['quiz_id'] ?? 0);
+        mysqli_query($koneksi, "DELETE FROM quiz_lobby WHERE quiz_id = $quiz_id");
         mysqli_query($koneksi, "DELETE FROM quiz_soal WHERE quiz_id = $quiz_id");
         mysqli_query($koneksi, "DELETE FROM quiz_hasil WHERE quiz_id = $quiz_id");
 
@@ -235,10 +263,14 @@ if ($page === 'beranda') {
 <html lang="id">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- AUTO REFRESH HANYA UNTUK HALAMAN LIVE MONITOR (Tiap 5 Detik) -->
-<?php if($page === 'live_monitor'): ?>
+<!-- AUTO REFRESH HANYA UNTUK HALAMAN LIVE MONITOR (Tiap 5 Detik) BILA KUIS SUDAH DIMULAI -->
+<?php if($page === 'live_monitor'): 
+    $q_status_cek = mysqli_query($koneksi, "SELECT status FROM quiz WHERE id = $quiz_id_get");
+    $s_cek = $q_status_cek ? mysqli_fetch_assoc($q_status_cek)['status'] : '';
+    if($s_cek === 'mulai'):
+?>
 <meta http-equiv="refresh" content="5">
-<?php endif; ?>
+<?php endif; endif; ?>
 <title>Dashboard Guru — Slearning</title>
 <link rel="icon" type="image/png" href="assets/img/logo-smkn7.png">
 <style>
@@ -477,7 +509,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <a href="guru.php?page=profil" class="quick-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> Pengaturan Profil</a>
     </div>
 
-  <!-- ================= HALAMAN KELAS ================= -->
+  <!-- ================= HAL halaman kelas dll ================= -->
   <?php elseif ($page === 'kelas'): ?>
     <div class="card-manage">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
@@ -531,7 +563,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <div class="card-manage">
         <a href="guru.php?page=kelas" style="display:inline-flex; align-items:center; gap:6px; color:var(--sage-600); text-decoration:none; font-weight:700; font-size:13px; margin-bottom:12px;">← Kembali ke Daftar Kelas</a>
         <h2>Pantauan Tugas & Status Pengerjaan Murid: <?= e($kelas_ini['nama_kelas']) ?></h2>
-        <p>Kode Gabung: <strong><?= e($kelas_ini['kode_gabung']) ?></strong> &bull; Murid yang melewati deadline akan kehilangan akses kumpul sampai Anda memperpanjang waktunya.</p>
+        <p>Kode Gabung: <strong><?= e($kelas_ini['kode_gabung']) ?></strong> &bull; Murid yang melewati deadline akan kehilangan akses kumpul.</p>
       </div>
 
       <?php
@@ -553,14 +585,14 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                       <h3 style="font-size: 17px; font-weight: 800; color: var(--sage-900); margin-bottom: 4px;">📄 <?= e($tugas['judul_tugas']) ?></h3>
                       <p style="font-size: 13px; color: var(--sage-600);">
                           Deadline: <strong style="color: <?= $is_expired ? '#C62828' : 'var(--sage-800)' ?>;"><?= $teks_deadline ?></strong> 
-                          <?= $is_expired ? '<span style="color: #C62828; font-weight: bold; margin-left: 6px;">(Terkunci untuk Murid)</span>' : '' ?>
+                          <?= $is_expired ? '<span style="color: #C62828; font-weight: bold; margin-left: 6px;">(Terkunci)</span>' : '' ?>
                       </p>
                   </div>
                   <form action="guru.php?page=detail_kelas&id=<?= $detail_kelas_id ?>" method="POST" style="display: flex; gap: 8px; align-items: center;">
                       <input type="hidden" name="aksi" value="update_deadline">
                       <input type="hidden" name="tugas_id" value="<?= $tugas_id ?>">
                       <input type="datetime-local" name="deadline" class="input-elegant" style="padding: 8px 12px; font-size: 12px; width: auto;">
-                      <button type="submit" class="btn-primary" style="padding: 8px 16px; font-size: 12px; background: var(--sage-800); box-shadow: none;">Ubah / Buka Akses</button>
+                      <button type="submit" class="btn-primary" style="padding: 8px 16px; font-size: 12px; background: var(--sage-800); box-shadow: none;">Ubah</button>
                   </form>
               </div>
 
@@ -575,7 +607,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 
                   if(mysqli_num_rows($q_status_murid) === 0):
                   ?>
-                      <li class="student-row-item" style="justify-content: center; color: var(--sage-600);">Belum ada murid yang bergabung di kelas ini.</li>
+                      <li class="student-row-item" style="justify-content: center; color: var(--sage-600);">Belum ada murid.</li>
                   <?php 
                   else:
                       while($sm = mysqli_fetch_assoc($q_status_murid)):
@@ -586,9 +618,9 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                               <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
                                   <strong style="font-size: 14.5px; color: var(--sage-900);"><?= e($sm['nama_murid']) ?></strong>
                                   <?php if($sudah_mengerjakan): ?>
-                                      <span class="badge-status badge-hijau" title="Murid sudah mengumpulkan tugas"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Sudah Mengerjakan</span>
+                                      <span class="badge-status badge-hijau"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Sudah Mengumpulkan</span>
                                   <?php else: ?>
-                                      <span class="badge-status badge-merah" title="Murid belum mengumpulkan tugas"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Belum Mengerjakan</span>
+                                      <span class="badge-status badge-merah"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Belum Mengumpulkan</span>
                                   <?php endif; ?>
                               </div>
                               <?php if($sudah_mengerjakan): 
@@ -598,7 +630,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                               ?>
                                   <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;">
                                       <?php if(!empty($link_file)): ?>
-                                          <a href="<?= e($link_file) ?>" target="_blank" style="font-size: 12px; color: var(--sage-600); text-decoration: underline; font-weight: 600;">Lihat File Lampiran</a>
+                                          <a href="<?= e($link_file) ?>" target="_blank" style="font-size: 12px; color: var(--sage-600); text-decoration: underline; font-weight: 600;">Lihat Lampiran</a>
                                       <?php endif; ?>
                                       <span style="font-size: 11px; color: #9ca3af;">Dikumpul: <?= e($sm['dikumpulkan_at']) ?></span>
                                   </div>
@@ -681,11 +713,11 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <form action="guru.php?page=tugas" method="POST" enctype="multipart/form-data" style="margin-top: 24px;">
         <input type="hidden" name="aksi" value="tambah_tugas">
         <div class="form-grid">
-          <div><label class="form-label">Judul Tugas</label><input type="text" name="judul_tugas" class="input-elegant" required placeholder="Contoh: Praktik Algoritma Pemrograman"></div>
+          <div><label class="form-label">Judul Tugas</label><input type="text" name="judul_tugas" class="input-elegant" required placeholder="Contoh: Praktik Algoritma"></div>
           <div>
             <label class="form-label">Pilih Kelas</label>
             <select name="kelas_id" class="input-elegant" required style="cursor:pointer;">
-              <option value="" disabled selected>-- Tentukan Kelas Tujuan --</option>
+              <option value="" disabled selected>-- Tentukan Kelas --</option>
               <?php foreach ($list_kelas as $kls): ?>
                 <option value="<?= (int)$kls['id_kelas'] ?>"><?= e($kls['nama_kelas']) ?></option>
               <?php endforeach; ?>
@@ -698,7 +730,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
         </div>
         <div style="margin-bottom: 24px;">
           <label class="form-label">Instruksi Pengerjaan</label>
-          <textarea name="deskripsi" class="input-elegant" style="min-height: 120px; resize: vertical;" placeholder="Tulis instruksi tugas secara rinci di sini..."></textarea>
+          <textarea name="deskripsi" class="input-elegant" style="min-height: 120px; resize: vertical;" placeholder="Tulis instruksi..."></textarea>
         </div>
         <button type="submit" class="btn-primary">Publikasikan Tugas Baru</button>
       </form>
@@ -781,7 +813,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
             </div>
         </div>
         
-        <!-- Banner Informasi Sistem Waktu Baru -->
         <div style="margin-bottom: 24px; padding: 16px; background: #FFF8D6; border: 1px dashed #E2D38A; border-radius: 8px; font-size: 13.5px; color: var(--sage-900); display: flex; gap: 12px; align-items: flex-start;">
             <svg viewBox="0 0 24 24" fill="none" stroke="#E07A5F" stroke-width="2" width="24" height="24" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             <div>
@@ -927,7 +958,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
             <?php endif; ?>
         </div>
 
-        <!-- Area Kanan: Sidebar Info Pengaturan Kuis -->
         <div class="builder-sidebar">
             <h3 style="font-size: 16px; font-weight: 800; color: var(--sage-800); margin-bottom: 20px;">Pengaturan Kuis</h3>
             
@@ -971,18 +1001,43 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
         </div>
 
         <?php if ($status_saat_ini === 'menunggu'): ?>
-            <!-- VIEW LOBI (Ruang Tunggu) -->
-            <div class="card-manage" style="text-align: center; padding: 60px 20px;">
+            <!-- VIEW LOBI (Ruang Tunggu) DENGAN LIVE COUNTER -->
+            <div class="card-manage" style="text-align: center; padding: 40px 20px;">
                 <svg viewBox="0 0 24 24" width="60" height="60" fill="none" stroke="var(--sage-500)" stroke-width="2" style="margin-bottom: 20px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 <h2 style="font-size: 28px;">Menunggu Siswa...</h2>
                 <p style="font-size: 16px; margin-bottom: 30px;">Kuis ini untuk <strong><?= e($quiz_info['nama_kelas']) ?></strong>. Total Siswa di kelas: <strong><?= (int)$quiz_info['total_murid_kelas'] ?> Siswa</strong>.</p>
                 
+                <!-- Kotak Indikator Live Lobi -->
+                <div style="background:var(--sage-50); border: 2px solid var(--sage-100); padding:30px; text-align:center; border-radius:var(--radius-lg); margin: 0 auto 30px auto; max-width: 400px; box-shadow: 0 4px 12px rgba(109,140,109,0.1);">
+                    <p style="font-size:14px; font-weight:700; color:var(--sage-600); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">Live Lobi Kuis</p>
+                    <h3 style="font-size:56px; color:var(--sage-800); font-weight:900; line-height:1; margin-bottom:8px; transition: transform 0.2s;" id="angka-menunggu">0</h3>
+                    <p style="font-weight:700; color:var(--sage-800); font-size:16px;">Murid Siap Mengerjakan</p>
+                </div>
+
                 <form method="POST">
                     <input type="hidden" name="aksi" value="ubah_status_kuis">
                     <input type="hidden" name="quiz_id" value="<?= $quiz_id_get ?>">
                     <input type="hidden" name="status_baru" value="mulai">
                     <button type="submit" class="btn-primary" style="font-size: 16px; padding: 16px 32px; background: #E07A5F;">▶️ Mulai Kuis Serentak Sekarang!</button>
                 </form>
+
+                <!-- Script Tarik Data Lobi -->
+                <script>
+                const quizId = <?= $quiz_id_get ?>; 
+                setInterval(() => {
+                    fetch('guru.php?page=api_cek_lobby&quiz_id=' + quizId)
+                    .then(res => res.json())
+                    .then(data => {
+                        const el = document.getElementById('angka-menunggu');
+                        if (el && el.innerText != data.jumlah) {
+                            el.innerText = data.jumlah;
+                            el.style.transform = 'scale(1.1)';
+                            setTimeout(() => { el.style.transform = 'scale(1)'; }, 200);
+                        }
+                    })
+                    .catch(err => console.error("Gagal menarik data lobi", err));
+                }, 2500); 
+                </script>
             </div>
         <?php else: ?>
             <!-- VIEW LIVE LEADERBOARD -->
