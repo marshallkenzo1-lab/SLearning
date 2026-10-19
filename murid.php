@@ -3,7 +3,7 @@
 // SLearning — Dashboard Murid (Single File Multi-Page Terintegrasi Penuh)
 =======
 // SLearning — Dashboard Murid (FULL VERSION - Live Quiz & Lobi)
->>>>>>> af46caeecff77b19ef6584d2a60db54d35db5009
+>>>>    >>> af46caeecff77b19ef6584d2a60db54d35db5009
 session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
