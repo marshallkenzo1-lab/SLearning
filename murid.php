@@ -1,5 +1,5 @@
 <?php
-// SLearning — Dashboard Murid (FULL VERSION - Live Quiz & Lobi Terintegrasi)
+// SLearning — Dashboard Murid (FULL VERSION - Live Quiz, Lobi & Halaman Notifikasi)
 session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
@@ -45,7 +45,7 @@ $page = $_GET['page'] ?? 'beranda';
 $quiz_id_get = (int)($_GET['quiz_id'] ?? 0);
 
 // =========================================================================
-// API RINGAN: Pengecekan Status Kuis & Kehadiran Lobi (Mencegah Server Down)
+// API RINGAN: Pengecekan Status Kuis & Kehadiran Lobi
 // =========================================================================
 if ($page === 'api_cek_kuis' && $quiz_id_get > 0) {
     header('Content-Type: application/json');
@@ -55,7 +55,6 @@ if ($page === 'api_cek_kuis' && $quiz_id_get > 0) {
     echo json_encode(['status' => $status_api]);
     exit; 
 }
-// =========================================================================
 
 // ---------- PROSES AKSI POST ----------
 
@@ -112,13 +111,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['gabung_kelas'])) {
                 $ins = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id, user_id) VALUES (?,?)");
                 mysqli_stmt_bind_param($ins,'ii',$kelas_id,$uid);
                 if (mysqli_stmt_execute($ins)) { 
-                    $cek_tugas = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM tugas WHERE kelas_id = $kelas_id"))['jml'] ?? 0;
-                    $cek_absen = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM absensi WHERE kelas_id = $kelas_id"))['jml'] ?? 0;
-                    $info_tambahan = "";
-                    if ($cek_tugas > 0 || $cek_absen > 0) {
-                        $info_tambahan = " Di kelas ini sudah ada " . ($cek_tugas > 0 ? "$cek_tugas tugas" : "") . ($cek_tugas > 0 && $cek_absen > 0 ? " dan " : "") . ($cek_absen > 0 ? "$cek_absen sesi absensi" : "") . " yang siap dikerjakan!";
-                    }
-                    set_flash_notification('Berhasil bergabung ke kelas ' . $kls['nama_kelas'] . '.' . $info_tambahan, 'success', 'Berhasil Masuk Kelas!'); 
+                    set_flash_notification('Berhasil bergabung ke kelas ' . $kls['nama_kelas'] . '.', 'success', 'Berhasil Masuk Kelas!'); 
                 }
                 mysqli_stmt_close($ins);
             }
@@ -136,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['isi_absen'])) {
     if (mysqli_fetch_assoc(mysqli_stmt_get_result($s))) {
         $ins = mysqli_prepare($koneksi, "INSERT INTO absensi_hadir (absensi_id, user_id, status) VALUES (?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status), waktu=CURRENT_TIMESTAMP");
         mysqli_stmt_bind_param($ins,'iis',$aid,$uid,$status); mysqli_stmt_execute($ins); mysqli_stmt_close($ins);
-        set_flash_notification('Kehadiran dicatat.', 'success');
+        set_flash_notification('Kehadiran berhasil dicatat.', 'success');
     }
     mysqli_stmt_close($s); header('Location: murid.php?page=absensi'); exit;
 }
@@ -160,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['kumpulkan_tugas'])) {
         if ($f['size'] > $maks) {
             set_flash_notification('Ukuran file maksimal 10 MB.', 'error', 'File Terlalu Besar');
         } elseif (!in_array($ext, $allow, true)) {
-            set_flash_notification('Format file tidak diizinkan. Gunakan PDF, DOC, PPT, ZIP, RAR, atau Gambar.', 'error', 'Format Salah');
+            set_flash_notification('Format file tidak diizinkan.', 'error', 'Format Salah');
         } else {
             $dir = __DIR__.'/uploads/tugas/'; 
             if (!is_dir($dir)) mkdir($dir, 0777, true);
@@ -182,14 +175,9 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['kumpulkan_tugas'])) {
                     mysqli_stmt_bind_param($s,'iiss',$tid,$uid,$f['name'],$dbp);
                 }
                 
-                if (mysqli_stmt_execute($s)) {
-                    set_flash_notification('Tugas berhasil dikumpulkan!', 'success', 'Berhasil');
-                } else {
-                    set_flash_notification('Gagal Database.', 'error', 'Kesalahan Sistem');
-                }
+                mysqli_stmt_execute($s);
                 mysqli_stmt_close($s);
-            } else {
-                set_flash_notification('Gagal mengupload file ke server.', 'error', 'Gagal');
+                set_flash_notification('Tugas berhasil dikumpulkan!', 'success', 'Berhasil');
             }
         }
     }
@@ -219,6 +207,12 @@ mysqli_stmt_close($s);
 $in_kelas = array_column($daftar_kelas,'id') ? implode(',', array_map('intval',array_column($daftar_kelas,'id'))) : '0';
 $stat_tugas_aktif = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM tugas WHERE kelas_id IN ($in_kelas)"))['jml'] ?? 0;
 $stat_quiz = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM quiz WHERE kelas_id IN ($in_kelas)"))['jml'] ?? 0;
+
+// Ambil daftar notifikasi (Tugas & Quiz terbaru)
+$notifikasi_list = [];
+$qn = mysqli_query($koneksi, "SELECT judul_tugas AS judul, 'tugas' AS tipe, created_at AS tanggal FROM tugas WHERE kelas_id IN ($in_kelas) UNION SELECT judul AS judul, 'quiz' AS tipe, created_at AS tanggal FROM quiz WHERE kelas_id IN ($in_kelas) ORDER BY tanggal DESC LIMIT 15");
+while($qn && $rn = mysqli_fetch_assoc($qn)) { $notifikasi_list[] = $rn; }
+$jml_notif = count($notifikasi_list);
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -238,11 +232,13 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .header-top { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 32px 16px; }
 .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; font-size: 22px; font-weight: 800; color: var(--sage-800); letter-spacing: -0.5px; }
 .logo svg { width: 30px; height: 30px; color: var(--sage-600); }
-.header-icons { display: flex; align-items: center; gap: 24px; }
-.header-icons a { color: var(--sage-600); transition: all 0.3s ease; position: relative; display: flex; align-items: center; text-decoration: none; background: #FFFFFF; padding: 10px; border-radius: 50%; border: 1px solid var(--sage-50); box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
-.header-icons a:hover { color: var(--sage-900); background: var(--sage-50); transform: translateY(-2px); border-color: var(--sage-100); }
+.header-icons { display: flex; align-items: center; gap: 16px; }
+.header-icons a, .notif-btn { color: var(--sage-600); transition: all 0.3s ease; position: relative; display: flex; align-items: center; justify-content: center; text-decoration: none; background: #FFFFFF; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--sage-50); box-shadow: 0 2px 6px rgba(0,0,0,0.02); cursor: pointer; }
+.header-icons a:hover, .notif-btn:hover { color: var(--sage-900); background: var(--sage-50); transform: translateY(-2px); border-color: var(--sage-100); }
 .header-icons svg { width: 20px; height: 20px; }
-.avatar-header-sm { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; border: 2px solid var(--sage-100); background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12px; margin: -4px; }
+.avatar-header-sm { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; border: 2px solid var(--sage-100); background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12px; }
+
+.notif-badge { position: absolute; top: 2px; right: 2px; background: #E07A5F; color: #fff; font-size: 10px; font-weight: 800; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; pointer-events: none; }
 
 .nav-tabs { display: flex; justify-content: center; gap: 8px; max-width: 1200px; margin: 0 auto; padding: 0 32px; }
 .nav-tab { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 28px; text-decoration: none; color: var(--sage-600); font-size: 13px; font-weight: 600; transition: all 0.3s ease; position: relative; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
@@ -297,6 +293,12 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     
     <?php if($page !== 'kerjakan_quiz'): ?>
     <div class="header-icons">
+      <!-- TOMBOL LONCENG PINDAH KE HALAMAN NOTIFIKASI KHUSUS -->
+      <a href="murid.php?page=notif" class="notif-btn" title="Pemberitahuan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <?php if($jml_notif > 0): ?><span class="notif-badge"><?= $jml_notif ?></span><?php endif; ?>
+      </a>
+
       <a href="murid.php?page=profil" title="Profil Saya">
         <?php if($foto_profil && file_exists($foto_profil)): ?><img src="<?= e($foto_profil) ?>" class="avatar-header-sm">
         <?php else: ?><div class="avatar-header-sm"><?= strtoupper(substr($nama_murid, 0, 1)) ?></div><?php endif; ?>
@@ -415,6 +417,30 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
               <div style="margin-bottom:32px;"><label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Password Baru</label><input type="password" name="password_baru" class="form-control" placeholder="Masukkan password baru"></div>
               <button type="submit" class="btn-yellow" style="width:100%; padding:14px;">Simpan Perubahan</button>
           </form>
+      </div>
+
+  <?php break; case 'notif': case 'notifikasi': // HALAMAN KHUSUS NOTIFIKASI ?>
+      <div class="card" style="max-width: 800px; margin: 0 auto;">
+          <h2 style="font-size:22px; margin-bottom:6px; font-weight:800; color:var(--sage-800);">🔔 Pemberitahuan & Informasi Terbaru</h2>
+          <p style="font-size:13.5px; color:var(--sage-600); margin-bottom:24px;">Berikut adalah riwayat tugas dan kuis terbaru dari kelas yang Anda ikuti.</p>
+          
+          <?php if(empty($notifikasi_list)): ?>
+              <div style="padding:40px; text-align:center; font-size:14px; color:var(--sage-600); border:1px dashed var(--sage-300); border-radius:var(--radius-md);">Belum ada pemberitahuan baru.</div>
+          <?php else: ?>
+              <div style="display:flex; flex-direction:column; gap:12px;">
+                  <?php foreach($notifikasi_list as $n): ?>
+                      <a href="murid.php?page=<?= $n['tipe'] === 'tugas' ? 'tugas' : 'quiz' ?>" style="text-decoration:none; display:block;">
+                          <div style="background:#FAFCFA; border:1px solid var(--sage-100); padding:18px 20px; border-radius:var(--radius-sm); transition: 0.2s;" onmouseover="this.style.borderColor='var(--sage-500)'" onmouseout="this.style.borderColor='var(--sage-100)'">
+                              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                  <span style="font-size:11px; font-weight:800; background:<?= $n['tipe']==='tugas'?'#FFF8D6':'#E8F0E8' ?>; color:<?= $n['tipe']==='tugas'?'#856404':'var(--sage-800)' ?>; padding:3px 10px; border-radius:50px; text-transform:uppercase;"><?= $n['tipe'] === 'tugas' ? '📄 Tugas Baru' : '🎮 Quiz Baru' ?></span>
+                                  <span style="font-size:12px; color:var(--sage-600); font-weight:600;"><?= date('d M Y, H:i', strtotime($n['tanggal'])) ?></span>
+                              </div>
+                              <h4 style="font-size:16px; font-weight:800; color:var(--sage-900);"><?= e($n['judul']) ?></h4>
+                          </div>
+                      </a>
+                  <?php endforeach; ?>
+              </div>
+          <?php endif; ?>
       </div>
 
   <?php break; case 'absensi': ?>
@@ -705,6 +731,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       </div>
   <?php endswitch; ?>
 </main>
+
 <?php render_flash_notification(); ?>
 </body>
 </html>
