@@ -4,7 +4,13 @@ session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
 
-if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit; }
+if (!isset($_SESSION['user_id'])) {
+    // Simpan kode undangan agar tetap diproses setelah murid login.
+    if (isset($_GET['gabung'])) {
+        $_SESSION['kode_gabung_pending'] = strtoupper(trim((string)$_GET['gabung']));
+    }
+    header("Location: login.php"); exit;
+}
 if (($_SESSION['jenis'] ?? '') === 'guru') { header("Location: guru.php"); exit; }
 
 $uid = (int)$_SESSION['user_id'];
@@ -119,6 +125,47 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['gabung_kelas'])) {
         }
     }
     header('Location: murid.php?page=kelas'); exit;
+}
+
+// Gabung kelas melalui tautan/QR Code dari guru (?page=kelas&gabung=KODE)
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && (isset($_GET['gabung']) || !empty($_SESSION['kode_gabung_pending']))) {
+    $kode_link = strtoupper(trim((string)($_GET['gabung'] ?? $_SESSION['kode_gabung_pending'] ?? '')));
+    unset($_SESSION['kode_gabung_pending']);
+    if ($kode_link === '') {
+        set_flash_notification('Link gabung kelas tidak valid.', 'error', 'Gagal');
+    } else {
+        $cek_kelas_link = mysqli_prepare($koneksi, "SELECT id, nama_kelas FROM kelas WHERE kode_gabung=? LIMIT 1");
+        mysqli_stmt_bind_param($cek_kelas_link, 's', $kode_link);
+        mysqli_stmt_execute($cek_kelas_link);
+        $kelas_link = mysqli_fetch_assoc(mysqli_stmt_get_result($cek_kelas_link));
+        mysqli_stmt_close($cek_kelas_link);
+
+        if (!$kelas_link) {
+            set_flash_notification('Kelas tidak ditemukan. Minta link terbaru dari guru.', 'error', 'Link Tidak Valid');
+        } else {
+            $kelas_link_id = (int)$kelas_link['id'];
+            $cek_anggota_link = mysqli_prepare($koneksi, "SELECT id FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1");
+            mysqli_stmt_bind_param($cek_anggota_link, 'ii', $kelas_link_id, $uid);
+            mysqli_stmt_execute($cek_anggota_link);
+            $sudah_gabung_link = mysqli_fetch_assoc(mysqli_stmt_get_result($cek_anggota_link));
+            mysqli_stmt_close($cek_anggota_link);
+
+            if ($sudah_gabung_link) {
+                set_flash_notification('Kamu sudah tergabung di kelas ' . $kelas_link['nama_kelas'] . '.', 'info', 'Sudah Bergabung');
+            } else {
+                $gabung_link = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id, user_id) VALUES (?,?)");
+                mysqli_stmt_bind_param($gabung_link, 'ii', $kelas_link_id, $uid);
+                if (mysqli_stmt_execute($gabung_link)) {
+                    set_flash_notification('Berhasil bergabung ke kelas ' . $kelas_link['nama_kelas'] . '.', 'success', 'Berhasil Masuk Kelas!');
+                } else {
+                    set_flash_notification('Gagal bergabung. Coba lagi atau gunakan kode kelas.', 'error', 'Gagal');
+                }
+                mysqli_stmt_close($gabung_link);
+            }
+        }
+    }
+    header('Location: murid.php?page=kelas');
+    exit;
 }
 
 // 3. Proses Isi Absensi
@@ -330,10 +377,19 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <div class="card" style="border-left:4px solid var(--sage-500)">
           <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Manajemen & Kode Gabung Kelas</h2>
           <p style="font-size:13px;color:var(--sage-600);margin-bottom:16px">Masukkan kode kelas dari guru untuk bergabung.</p>
-          <form method="POST" style="display:flex;gap:12px;flex-wrap:wrap">
-              <input type="text" name="kode_gabung" class="form-control" placeholder="KLS-XXX" required style="flex:1;min-width:200px;text-transform:uppercase">
+          <form method="POST" id="form-gabung-kelas" style="display:flex;gap:12px;flex-wrap:wrap">
+              <input type="text" id="kode-gabung-input" name="kode_gabung" class="form-control" placeholder="Masukkan kode kelas, contoh KLS-XXX" required style="flex:1;min-width:200px;text-transform:uppercase">
               <button type="submit" name="gabung_kelas" class="btn-yellow">Gabung Kelas</button>
           </form>
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--sage-100);">
+              <p style="font-size:13px;font-weight:700;color:var(--sage-800);margin-bottom:8px;">Atau gabung dengan QR dari galeri</p>
+              <p style="font-size:12px;color:var(--sage-600);margin-bottom:12px;line-height:1.6;">Pilih gambar QR kelas yang sudah disimpan di galeri HP atau komputer. Kode akan dibaca otomatis.</p>
+              <label for="qr-galeri-input" class="btn-yellow" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;">
+                  🖼️ Pilih QR dari Galeri
+              </label>
+              <input type="file" id="qr-galeri-input" accept="image/*" style="display:none">
+              <div id="qr-galeri-status" role="status" style="font-size:12px;color:var(--sage-600);margin-top:10px;"></div>
+          </div>
       </div>
 
       <h3 style="font-size:18px;margin:30px 0 16px;font-weight:800;color:var(--sage-800);display:flex;align-items:center;gap:10px;"><span style="display:block;width:8px;height:24px;background:var(--sage-500);border-radius:4px;"></span> Daftar Kelas Saya</h3>
@@ -733,5 +789,78 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 </main>
 
 <?php render_flash_notification(); ?>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+(function () {
+    const fileInput = document.getElementById('qr-galeri-input');
+    const codeInput = document.getElementById('kode-gabung-input');
+    const form = document.getElementById('form-gabung-kelas');
+    const statusBox = document.getElementById('qr-galeri-status');
+    if (!fileInput || !codeInput || !form || !statusBox) return;
+
+    fileInput.addEventListener('change', async function () {
+        const file = this.files && this.files[0];
+        if (!file) return;
+        if (!file.type || !file.type.startsWith('image/')) {
+            statusBox.textContent = 'Pilih file gambar QR terlebih dahulu.';
+            return;
+        }
+        if (typeof jsQR !== 'function') {
+            statusBox.textContent = 'Pembaca QR belum termuat. Periksa koneksi internet lalu muat ulang halaman.';
+            return;
+        }
+        statusBox.textContent = 'Sedang membaca QR dari gambar...';
+        try {
+            let bitmap;
+            if ('createImageBitmap' in window) {
+                bitmap = await createImageBitmap(file);
+            } else {
+                bitmap = await new Promise((resolve, reject) => {
+                    const img = new Image();
+                    const objectUrl = URL.createObjectURL(file);
+                    img.onload = () => { URL.revokeObjectURL(objectUrl); resolve(img); };
+                    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Gambar tidak dapat dibuka.')); };
+                    img.src = objectUrl;
+                });
+            }
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            ctx.drawImage(bitmap, 0, 0);
+            if (bitmap.close) bitmap.close();
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
+            if (!result || !result.data) {
+                statusBox.textContent = 'QR tidak terbaca. Coba pilih gambar yang lebih jelas dan tidak terpotong.';
+                return;
+            }
+
+            const isiQR = result.data.trim();
+            let kode = '';
+            try {
+                const url = new URL(isiQR, window.location.href);
+                kode = url.searchParams.get('gabung') || url.searchParams.get('kode_gabung') || '';
+            } catch (e) {}
+            // Mendukung QR berisi link gabung atau kode kelas saja.
+            if (!kode && !/^https?:\/\//i.test(isiQR) && !isiQR.includes('://')) kode = isiQR;
+            kode = kode.trim().toUpperCase();
+            if (!kode || kode.length > 100 || /[\s<>"']/.test(kode)) {
+                statusBox.textContent = 'QR terbaca, tetapi bukan QR/link gabung kelas SLearning.';
+                return;
+            }
+            codeInput.value = kode;
+            statusBox.textContent = 'Kode terbaca: ' + kode + '. Sedang menggabungkan ke kelas...';
+            form.requestSubmit();
+        } catch (error) {
+            statusBox.textContent = 'Gagal membaca gambar QR. Coba gambar lain.';
+        } finally {
+            fileInput.value = '';
+        }
+    });
+})();
+</script>
+
 </body>
 </html>
