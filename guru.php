@@ -10,6 +10,29 @@ $user_id = (int)$_SESSION['user_id'];
 $page = $_GET['page'] ?? 'beranda';
 $detail_kelas_id = (int)($_GET['id'] ?? 0);
 
+// Kolom gambar untuk soal Quiziz (dibuat otomatis jika belum tersedia).
+$cekGambarSoal = @mysqli_query($koneksi, "SHOW COLUMNS FROM quiz_soal LIKE 'gambar'");
+if ($cekGambarSoal && mysqli_num_rows($cekGambarSoal) === 0) {
+    @mysqli_query($koneksi, "ALTER TABLE quiz_soal ADD COLUMN gambar VARCHAR(255) NULL");
+}
+
+function uploadGambarSoal($field = 'gambar_soal') {
+    if (!isset($_FILES[$field]) || $_FILES[$field]['error'] === UPLOAD_ERR_NO_FILE) return [true, ''];
+    $f = $_FILES[$field];
+    if ($f['error'] !== UPLOAD_ERR_OK) return [false, 'Upload foto gagal. Coba pilih foto lagi.'];
+    if ($f['size'] > 5 * 1024 * 1024) return [false, 'Ukuran foto maksimal 5 MB.'];
+    $info = @getimagesize($f['tmp_name']);
+    if (!$info || empty($info['mime'])) return [false, 'File harus berupa gambar JPG, PNG, atau WEBP.'];
+    $exts = ['image/jpeg'=>'jpg', 'image/png'=>'png', 'image/webp'=>'webp'];
+    if (!isset($exts[$info['mime']])) return [false, 'Format foto harus JPG, PNG, atau WEBP.'];
+    $dir = __DIR__ . '/uploads/quiz_soal/';
+    if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) return [false, 'Folder upload foto tidak bisa dibuat.'];
+    $nama = 'soal_' . bin2hex(random_bytes(8)) . '.' . $exts[$info['mime']];
+    if (!move_uploaded_file($f['tmp_name'], $dir . $nama)) return [false, 'Foto gagal disimpan. Periksa izin folder uploads.'];
+    return [true, 'uploads/quiz_soal/' . $nama];
+}
+
+
 function flash_set($msg, $type='success'){ $_SESSION['flash_msg']=$msg; $_SESSION['flash_type']=$type; }
 $flash_msg = $_SESSION['flash_msg'] ?? ''; $flash_type = $_SESSION['flash_type'] ?? 'success';
 unset($_SESSION['flash_msg'], $_SESSION['flash_type']);
@@ -142,6 +165,68 @@ if (isset($_GET['ekspor_rekap'])) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
     $aksi = $_POST['aksi'];
     $target_page = $_POST['redirect_page'] ?? 'beranda';
+
+    if ($aksi === 'buat_quiz') {
+        $judul = trim($_POST['judul_quiz'] ?? '');
+        $deskripsi = trim($_POST['deskripsi_quiz'] ?? '');
+        $kelas_id = (int)($_POST['kelas_id'] ?? 0);
+        $durasi = max(1, min(300, (int)($_POST['durasi_menit'] ?? 15)));
+        $cekKelas = mysqli_prepare($koneksi, "SELECT id FROM kelas WHERE id=? AND guru_id=? LIMIT 1");
+        mysqli_stmt_bind_param($cekKelas, 'ii', $kelas_id, $user_id); mysqli_stmt_execute($cekKelas);
+        $kelasValid = mysqli_fetch_assoc(mysqli_stmt_get_result($cekKelas)); mysqli_stmt_close($cekKelas);
+        if ($judul !== '' && $kelasValid) {
+            $st = mysqli_prepare($koneksi, "INSERT INTO quiz (guru_id, kelas_id, judul, deskripsi, durasi_menit) VALUES (?,?,?,?,?)");
+            mysqli_stmt_bind_param($st, 'iissi', $user_id, $kelas_id, $judul, $deskripsi, $durasi);
+            if (mysqli_stmt_execute($st)) { $quizBaru = mysqli_insert_id($koneksi); flash_set('Quiz berhasil dibuat. Sekarang tambahkan soal dan foto jika diperlukan.'); mysqli_stmt_close($st); header('Location: guru.php?page=quiz&kelola_quiz='.$quizBaru); exit; }
+            mysqli_stmt_close($st); flash_set('Quiz gagal dibuat: periksa struktur tabel quiz.', 'error');
+        } else flash_set('Judul quiz dan kelas yang kamu ajar wajib dipilih.', 'error');
+        header('Location: guru.php?page=quiz'); exit;
+    }
+
+    if ($aksi === 'tambah_soal_quiz') {
+        $quiz_id = (int)($_POST['quiz_id'] ?? 0);
+        $pertanyaan = trim($_POST['pertanyaan'] ?? '');
+        $opsi_a = trim($_POST['opsi_a'] ?? ''); $opsi_b = trim($_POST['opsi_b'] ?? '');
+        $opsi_c = trim($_POST['opsi_c'] ?? ''); $opsi_d = trim($_POST['opsi_d'] ?? '');
+        $kunci = strtoupper(trim($_POST['kunci'] ?? ''));
+        $cekQuiz = mysqli_prepare($koneksi, "SELECT id FROM quiz WHERE id=? AND guru_id=? LIMIT 1");
+        mysqli_stmt_bind_param($cekQuiz, 'ii', $quiz_id, $user_id); mysqli_stmt_execute($cekQuiz);
+        $quizValid = mysqli_fetch_assoc(mysqli_stmt_get_result($cekQuiz)); mysqli_stmt_close($cekQuiz);
+        if (!$quizValid) { flash_set('Quiz tidak ditemukan atau bukan milik akunmu.', 'error'); header('Location: guru.php?page=quiz'); exit; }
+        if ($pertanyaan === '' || $opsi_a === '' || $opsi_b === '' || $opsi_c === '' || $opsi_d === '' || !in_array($kunci, ['A','B','C','D'], true)) {
+            flash_set('Isi pertanyaan, semua pilihan A–D, dan kunci jawaban.', 'error'); header('Location: guru.php?page=quiz&kelola_quiz='.$quiz_id); exit;
+        }
+        [$okUpload, $gambarAtauPesan] = uploadGambarSoal('gambar_soal');
+        if (!$okUpload) { flash_set($gambarAtauPesan, 'error'); header('Location: guru.php?page=quiz&kelola_quiz='.$quiz_id); exit; }
+        $gambar = $gambarAtauPesan;
+        $st = mysqli_prepare($koneksi, "INSERT INTO quiz_soal (quiz_id, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, kunci, gambar) VALUES (?,?,?,?,?,?,?,?)");
+        if ($st) {
+            mysqli_stmt_bind_param($st, 'isssssss', $quiz_id, $pertanyaan, $opsi_a, $opsi_b, $opsi_c, $opsi_d, $kunci, $gambar);
+            if (mysqli_stmt_execute($st)) flash_set('Soal berhasil ditambahkan' . ($gambar !== '' ? ' beserta fotonya.' : '.'));
+            else { if ($gambar !== '') @unlink(__DIR__ . '/' . $gambar); flash_set('Gagal menyimpan soal. Pastikan kolom gambar tersedia di tabel quiz_soal.', 'error'); }
+            mysqli_stmt_close($st);
+        } else { if ($gambar !== '') @unlink(__DIR__ . '/' . $gambar); flash_set('Gagal menyiapkan penyimpanan soal.', 'error'); }
+        header('Location: guru.php?page=quiz&kelola_quiz='.$quiz_id); exit;
+    }
+
+    if ($aksi === 'hapus_soal_quiz') {
+        $soal_id = (int)($_POST['soal_id'] ?? 0); $quiz_id = (int)($_POST['quiz_id'] ?? 0);
+        $st = mysqli_prepare($koneksi, "SELECT qs.gambar FROM quiz_soal qs JOIN quiz q ON q.id=qs.quiz_id WHERE qs.id=? AND qs.quiz_id=? AND q.guru_id=? LIMIT 1");
+        mysqli_stmt_bind_param($st, 'iii', $soal_id, $quiz_id, $user_id); mysqli_stmt_execute($st); $rowSoal = mysqli_fetch_assoc(mysqli_stmt_get_result($st)); mysqli_stmt_close($st);
+        if ($rowSoal) { mysqli_query($koneksi, "DELETE FROM quiz_soal WHERE id=$soal_id AND quiz_id=$quiz_id"); if (!empty($rowSoal['gambar'])) { $path = __DIR__ . '/' . $rowSoal['gambar']; if (is_file($path)) @unlink($path); } flash_set('Soal berhasil dihapus.'); }
+        else flash_set('Soal tidak ditemukan.', 'error');
+        header('Location: guru.php?page=quiz&kelola_quiz='.$quiz_id); exit;
+    }
+
+    if ($aksi === 'hapus_quiz') {
+        $quiz_id = (int)($_POST['quiz_id'] ?? 0);
+        $st = mysqli_prepare($koneksi, "SELECT id FROM quiz WHERE id=? AND guru_id=? LIMIT 1"); mysqli_stmt_bind_param($st, 'ii', $quiz_id, $user_id); mysqli_stmt_execute($st); $quizValid = mysqli_fetch_assoc(mysqli_stmt_get_result($st)); mysqli_stmt_close($st);
+        if ($quizValid) {
+            $qg = mysqli_query($koneksi, "SELECT gambar FROM quiz_soal WHERE quiz_id=$quiz_id"); while ($qg && $g=mysqli_fetch_assoc($qg)) { if (!empty($g['gambar']) && is_file(__DIR__.'/'.$g['gambar'])) @unlink(__DIR__.'/'.$g['gambar']); }
+            mysqli_query($koneksi, "DELETE FROM quiz_hasil WHERE quiz_id=$quiz_id"); mysqli_query($koneksi, "DELETE FROM quiz_soal WHERE quiz_id=$quiz_id"); mysqli_query($koneksi, "DELETE FROM quiz WHERE id=$quiz_id AND guru_id=$user_id"); flash_set('Quiz dan soal-soalnya berhasil dihapus.');
+        } else flash_set('Quiz tidak ditemukan.', 'error');
+        header('Location: guru.php?page=quiz'); exit;
+    }
 
     if ($aksi === 'update_profil') {
         $nama_baru = trim($_POST['nama'] ?? '');
@@ -1093,9 +1178,69 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 
   <!-- ================= HALAMAN QUIZ ================= -->
   <?php else: ?>
+    <?php
+      $kelolaQuizId = (int)($_GET['kelola_quiz'] ?? 0);
+      $quizKelola = null; $soalKelola = []; $daftarQuiz = [];
+      if ($kelolaQuizId > 0) {
+        $sq = mysqli_prepare($koneksi, "SELECT q.*, k.nama_kelas FROM quiz q JOIN kelas k ON k.id=q.kelas_id WHERE q.id=? AND q.guru_id=? LIMIT 1");
+        mysqli_stmt_bind_param($sq, 'ii', $kelolaQuizId, $user_id); mysqli_stmt_execute($sq); $quizKelola = mysqli_fetch_assoc(mysqli_stmt_get_result($sq)); mysqli_stmt_close($sq);
+        if ($quizKelola) { $ss = mysqli_prepare($koneksi, "SELECT * FROM quiz_soal WHERE quiz_id=? ORDER BY id ASC"); mysqli_stmt_bind_param($ss, 'i', $kelolaQuizId); mysqli_stmt_execute($ss); $rs=mysqli_stmt_get_result($ss); while($rr=mysqli_fetch_assoc($rs)) $soalKelola[]=$rr; mysqli_stmt_close($ss); }
+      }
+      $dq = mysqli_query($koneksi, "SELECT q.id,q.judul,q.deskripsi,q.durasi_menit,q.kelas_id,k.nama_kelas,(SELECT COUNT(*) FROM quiz_soal qs WHERE qs.quiz_id=q.id) AS jumlah_soal,(SELECT COUNT(*) FROM quiz_hasil qh WHERE qh.quiz_id=q.id) AS peserta FROM quiz q JOIN kelas k ON k.id=q.kelas_id WHERE q.guru_id=$user_id ORDER BY q.id DESC");
+      while($dq && $rr=mysqli_fetch_assoc($dq)) $daftarQuiz[]=$rr;
+    ?>
     <div class="card-manage">
       <h2>Modul Quiziz Pengajar</h2>
-      <p>Fitur Quiz akan segera ditambahkan di pembaruan selanjutnya.</p>
+      <p style="margin-bottom:22px">Buat kuis pilihan ganda, tambahkan foto pada soal, dan pantau hasil murid.</p>
+      <?php if (!$quizKelola): ?>
+        <h3 style="font-size:16px;color:var(--sage-800);margin-bottom:14px">Buat Quiz Baru</h3>
+        <form method="post" action="guru.php?page=quiz">
+          <input type="hidden" name="aksi" value="buat_quiz"><input type="hidden" name="redirect_page" value="quiz">
+          <div class="form-grid">
+            <div><label class="form-label">Judul Quiz</label><input class="input-elegant" name="judul_quiz" required maxlength="180" placeholder="Contoh: Quiz Basis Data"></div>
+            <div><label class="form-label">Kelas</label><select class="input-elegant" name="kelas_id" required><option value="">-- Pilih kelas --</option><?php foreach($list_kelas as $kls): ?><option value="<?= (int)$kls['id_kelas'] ?>"><?= e($kls['nama_kelas']) ?></option><?php endforeach; ?></select></div>
+          </div>
+          <div class="form-grid">
+            <div><label class="form-label">Durasi (menit)</label><input class="input-elegant" type="number" name="durasi_menit" min="1" max="300" value="15" required></div>
+            <div><label class="form-label">Deskripsi (opsional)</label><input class="input-elegant" name="deskripsi_quiz" placeholder="Petunjuk atau materi quiz"></div>
+          </div>
+          <button class="btn-primary" type="submit">+ Buat Quiz</button>
+        </form>
+        <?php if (!$daftarQuiz): ?><div class="empty-state" style="margin-top:22px"><p>Belum ada quiz. Buat quiz pertamamu di atas.</p></div><?php else: ?>
+          <h3 style="font-size:16px;color:var(--sage-800);margin:30px 0 14px">Quiz yang Sudah Dibuat</h3>
+          <div style="display:grid;gap:14px">
+          <?php foreach($daftarQuiz as $qz): ?><div style="background:#fff;border:1px solid var(--sage-100);border-radius:16px;padding:18px;display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap">
+            <div><strong style="color:var(--sage-800)"><?= e($qz['judul']) ?></strong><p style="margin-top:5px"><?= e($qz['nama_kelas']) ?> · <?= (int)$qz['jumlah_soal'] ?> soal · <?= (int)$qz['durasi_menit'] ?> menit · <?= (int)$qz['peserta'] ?> peserta</p></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn-primary" style="padding:9px 15px" href="guru.php?page=quiz&kelola_quiz=<?= (int)$qz['id'] ?>">Kelola Soal</a><a class="btn-primary" style="padding:9px 15px;background:var(--sage-800)" href="quiziz.php?id=<?= (int)$qz['id'] ?>">Pratinjau</a><form method="post" onsubmit="return confirm('Hapus quiz beserta semua soal dan hasilnya?')"><input type="hidden" name="aksi" value="hapus_quiz"><input type="hidden" name="quiz_id" value="<?= (int)$qz['id'] ?>"><button class="btn-primary" style="padding:9px 15px;background:#b94a48" type="submit">Hapus</button></form></div>
+          </div><?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+      <?php elseif (!$quizKelola): ?>
+        <div class="alert error">Quiz tidak ditemukan atau bukan milik akun guru ini.</div><a class="btn-primary" href="guru.php?page=quiz">Kembali ke daftar quiz</a>
+      <?php else: ?>
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:22px"><div><h3 style="font-size:20px;color:var(--sage-800)"><?= e($quizKelola['judul']) ?></h3><p><?= e($quizKelola['nama_kelas']) ?> · <?= (int)$quizKelola['durasi_menit'] ?> menit</p></div><a class="btn-primary" href="guru.php?page=quiz">← Daftar Quiz</a></div>
+        <form method="post" enctype="multipart/form-data" action="guru.php?page=quiz&kelola_quiz=<?= (int)$quizKelola['id'] ?>" style="background:#F8FAF7;border:1px solid var(--sage-100);border-radius:16px;padding:22px;margin-bottom:24px">
+          <input type="hidden" name="aksi" value="tambah_soal_quiz"><input type="hidden" name="quiz_id" value="<?= (int)$quizKelola['id'] ?>">
+          <h3 style="font-size:16px;color:var(--sage-800);margin-bottom:16px">Tambah Soal</h3>
+          <div style="margin-bottom:16px"><label class="form-label">Pertanyaan</label><textarea class="input-elegant" name="pertanyaan" rows="3" required placeholder="Tulis pertanyaan di sini..." style="width:100%;resize:vertical"></textarea></div>
+          <div style="margin-bottom:18px"><label class="form-label">Foto soal (opsional)</label><input class="input-elegant" type="file" name="gambar_soal" id="gambarSoal" accept="image/png,image/jpeg,image/webp"><small style="display:block;color:var(--sage-600);margin-top:6px">Format JPG, PNG, WEBP · maksimal 5 MB</small><img id="previewGambarSoal" alt="Pratinjau foto soal" style="display:none;max-width:100%;max-height:260px;margin-top:12px;border-radius:12px;border:1px solid var(--sage-100)"></div>
+          <div class="form-grid">
+            <div><label class="form-label">Pilihan A</label><input class="input-elegant" name="opsi_a" required></div><div><label class="form-label">Pilihan B</label><input class="input-elegant" name="opsi_b" required></div>
+            <div><label class="form-label">Pilihan C</label><input class="input-elegant" name="opsi_c" required></div><div><label class="form-label">Pilihan D</label><input class="input-elegant" name="opsi_d" required></div>
+          </div>
+          <div style="max-width:320px;margin-bottom:20px"><label class="form-label">Kunci Jawaban</label><select class="input-elegant" name="kunci" required><option value="">-- Pilih jawaban benar --</option><option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option></select></div>
+          <button class="btn-primary" type="submit">+ Simpan Soal</button>
+        </form>
+        <script>document.getElementById('gambarSoal')?.addEventListener('change',function(){const f=this.files&&this.files[0],img=document.getElementById('previewGambarSoal');if(!f){img.style.display='none';img.removeAttribute('src');return;}if(!f.type.startsWith('image/')){alert('Pilih file gambar.');this.value='';img.style.display='none';return;}img.src=URL.createObjectURL(f);img.style.display='block';});</script>
+        <h3 style="font-size:16px;color:var(--sage-800);margin-bottom:14px">Daftar Soal (<?= count($soalKelola) ?>)</h3>
+        <?php if (!$soalKelola): ?><div class="empty-state"><p>Belum ada soal. Tambahkan soal di atas.</p></div><?php else: ?>
+          <div style="display:grid;gap:14px">
+          <?php foreach($soalKelola as $i=>$so): ?><div style="border:1px solid var(--sage-100);border-radius:14px;padding:18px;background:#fff"><div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start"><strong><?= ($i+1) ?>. <?= e($so['pertanyaan']) ?></strong><form method="post" onsubmit="return confirm('Hapus soal ini?')"><input type="hidden" name="aksi" value="hapus_soal_quiz"><input type="hidden" name="quiz_id" value="<?= (int)$quizKelola['id'] ?>"><input type="hidden" name="soal_id" value="<?= (int)$so['id'] ?>"><button type="submit" class="btn-primary" style="padding:7px 12px;background:#b94a48">Hapus</button></form></div>
+            <?php if(!empty($so['gambar'])): ?><img src="<?= e($so['gambar']) ?>" alt="Foto soal" style="display:block;max-width:100%;max-height:260px;margin:12px 0;border-radius:10px;border:1px solid var(--sage-100)"><?php endif; ?>
+            <p style="font-size:13px;color:var(--sage-600);margin-top:10px">A. <?= e($so['opsi_a']) ?> · B. <?= e($so['opsi_b']) ?> · C. <?= e($so['opsi_c']) ?> · D. <?= e($so['opsi_d']) ?></p><p style="margin-top:8px;font-size:12px;font-weight:800;color:var(--sage-600)">Kunci: <?= e($so['kunci']) ?></p></div><?php endforeach; ?>
+          </div>
+        <?php endif; ?>
+      <?php endif; ?>
     </div>
   <?php endif; ?>
 
