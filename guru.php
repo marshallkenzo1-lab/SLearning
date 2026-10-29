@@ -1,5 +1,5 @@
 <?php
-// SLearning — Dashboard Guru (FULL VERSION - Detail Tugas Khusus & Dropdown Notifikasi Real-Time)
+// SLearning — Dashboard Guru (FULL VERSION - Clean & Minimalist Class Card)
 session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
@@ -265,7 +265,6 @@ $jml_tugas = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) AS c FRO
 $jml_absen = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) AS c FROM absensi WHERE guru_id=$user_id"))['c'] ?? 0;
 
 $notif_tugas_belum_dinilai = []; 
-// Query untuk mengambil notifikasi (tidak perlu if($page=='beranda') lagi karena notif mau ditampilkan di dropdown semua page)
 $q_notif = mysqli_query($koneksi, "SELECT pt.id, pt.dikumpulkan_at, l.nama AS nama_murid, t.judul_tugas, k.nama_kelas, t.kelas_id, pt.tugas_id FROM pengumpulan_tugas pt LEFT JOIN login l ON pt.user_id = l.id JOIN tugas t ON pt.tugas_id = t.id JOIN kelas k ON t.kelas_id = k.id WHERE t.guru_id = $user_id AND (pt.nilai IS NULL OR pt.nilai = 0 OR pt.nilai = '') ORDER BY pt.dikumpulkan_at DESC LIMIT 5");
 if($q_notif) { while ($rn = mysqli_fetch_assoc($q_notif)) { $notif_tugas_belum_dinilai[] = $rn; } }
 
@@ -336,19 +335,26 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .section-title { font-size: 18px; font-weight: 800; color: var(--sage-800); margin-bottom: 24px; display: flex; align-items: center; gap: 10px; }
 .section-title::before { content: ''; display: block; width: 8px; height: 24px; background: var(--sage-500); border-radius: 4px; }
 .class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; }
-.class-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 28px; box-shadow: var(--shadow-sm); border: 1px solid var(--sage-50); transition: all 0.4s ease; position: relative; overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: inherit; }
-.class-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: var(--sage-100); }
-.class-card-header { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
-.class-icon { width: 54px; height: 54px; border-radius: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--sage-50); color: var(--sage-600); border: 1px solid var(--sage-100); }
-.class-info h4 { font-size: 17px; font-weight: 800; color: var(--sage-800); margin-bottom: 6px; }
-.class-info .murid-count { font-size: 13px; color: var(--sage-600); font-weight: 500; display: flex; align-items: center; gap: 6px; }
-.kode-badge { display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--nav-yellow); border: 1px dashed #E2D38A; border-radius: var(--radius-sm); padding: 8px 14px; font-family: monospace; font-size: 13px; font-weight: 700; color: var(--sage-800); margin-bottom: 20px; width: 100%; }
-.btn-copy { background: #fff; border: 1px solid #E2D38A; color: var(--sage-800); padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: 0.2s; font-family: 'Plus Jakarta Sans', sans-serif; }
-.btn-copy:hover { background: var(--sage-800); color: #fff; border-color: var(--sage-800); }
-.btn-card-action { display: flex; gap: 10px; margin-top: auto; }
-.btn-hapus { background: transparent; color: #E07A5F; border: 1px solid #F4E3E0; padding: 10px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
+
+/* TAMPILAN KARTU KELAS SUPER BERSIH (MINIMALIS) */
+.class-card { background: var(--bg-card); border-radius: var(--radius-md); padding: 24px; box-shadow: var(--shadow-sm); border: 1px solid var(--sage-50); transition: all 0.3s ease; position: relative; overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: inherit; }
+.class-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--sage-100); }
+.class-card-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.class-icon { width: 50px; height: 50px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--sage-50); color: var(--sage-600); border: 1px solid var(--sage-100); }
+.class-info h4 { font-size: 16.5px; font-weight: 800; color: var(--sage-800); margin-bottom: 4px; }
+.class-info .murid-count { font-size: 12.5px; color: var(--sage-600); font-weight: 500; display: flex; align-items: center; gap: 5px; }
+
+/* KODE GABUNG BERSIH & RAPI (TIDAK RUSUH) */
+.kode-badge { background: #FAFCFA; border: 1px solid var(--sage-100); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 16px; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.kode-text { font-size: 13px; font-weight: 700; color: var(--sage-800); display: flex; align-items: center; gap: 6px; font-family: monospace; }
+.kode-actions { display: flex; gap: 4px; }
+.btn-action-clean { background: #FFFFFF; border: 1px solid var(--sage-100); color: var(--sage-700); padding: 6px 10px; border-radius: 8px; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; transition: 0.2s; font-family: 'Plus Jakarta Sans', sans-serif; text-decoration: none; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+.btn-action-clean:hover { background: var(--sage-50); color: var(--sage-900); border-color: var(--sage-300); }
+
+.btn-card-action { display: flex; gap: 8px; margin-top: auto; }
+.btn-hapus { background: transparent; color: #E07A5F; border: 1px solid #F4E3E0; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: 0.2s; }
 .btn-hapus:hover { background: #FFF3F0; }
-.btn-masuk-kelas { background: var(--sage-500); color: #fff; border: none; padding: 10px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; flex: 1; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
+.btn-masuk-kelas { background: var(--sage-500); color: #fff; border: none; padding: 10px 16px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 700; flex: 1; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
 .btn-masuk-kelas:hover { background: var(--sage-600); }
 .empty-state { text-align: center; padding: 40px 20px; color: var(--sage-600); background: var(--bg-card); border-radius: var(--radius-lg); border: 1px dashed var(--sage-300); }
 
@@ -564,24 +570,32 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <div class="empty-state"><p>Belum ada kelas yang terdaftar.</p></div>
     <?php else: ?>
       <div class="class-grid">
-        <?php foreach ($list_kelas as $kls): ?>
+        <?php foreach ($list_kelas as $kls): 
+            $protokol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
+            $base_url = $protokol . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
+            $link_gabung = $base_url . "/murid.php?kode=" . urlencode($kls['kode_gabung']);
+            $qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" . urlencode($link_gabung);
+        ?>
         <div class="class-card">
           <div class="class-card-header">
             <div class="class-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
             <div class="class-info">
               <h4><?= e($kls['nama_kelas']) ?></h4>
-              <span class="murid-count"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> <?= (int)$kls['jml_murid'] ?> Murid Tergabung</span>
+              <span class="murid-count"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> <?= (int)$kls['jml_murid'] ?> Murid Tergabung</span>
             </div>
           </div>
           
+          <!-- TAMPILAN CLEAN & MINIMALIS -->
           <div class="kode-badge">
-            <span style="display:inline-flex; align-items:center; gap:6px;">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-              <strong id="kode-<?= $kls['id_kelas'] ?>"><?= e($kls['kode_gabung']) ?></strong>
-            </span>
-            <button type="button" class="btn-copy" onclick="salinKode('<?= e($kls['kode_gabung']) ?>', this)">
-              📋 Salin
-            </button>
+            <div class="kode-text">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+              <span id="kode-<?= $kls['id_kelas'] ?>"><?= e($kls['kode_gabung']) ?></span>
+            </div>
+            <div class="kode-actions">
+                <button type="button" class="btn-action-clean" onclick="salinKode('<?= e($kls['kode_gabung']) ?>', this)" title="Salin Kode">📋 Kode</button>
+                <button type="button" class="btn-action-clean" onclick="salinKode('<?= e($link_gabung) ?>', this)" title="Salin Link">🔗 Link</button>
+                <button type="button" class="btn-action-clean" style="background: var(--sage-800); color: #fff; border-color: var(--sage-800);" onclick="window.open('<?= $qr_url ?>', '_blank', 'width=400,height=400')" title="Lihat QR Code">📱 QR</button>
+            </div>
           </div>
 
           <div class="btn-card-action">
@@ -601,18 +615,24 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       function salinKode(kode, btn) {
           navigator.clipboard.writeText(kode).then(() => {
               let originalText = btn.innerHTML;
-              btn.innerHTML = '✅ Tersalin!';
+              btn.innerHTML = '✓';
               btn.style.background = '#2E7D32';
               btn.style.color = '#fff';
               btn.style.borderColor = '#2E7D32';
               setTimeout(() => {
                   btn.innerHTML = originalText;
-                  btn.style.background = '#fff';
-                  btn.style.color = 'var(--sage-800)';
-                  btn.style.borderColor = '#E2D38A';
-              }, 2000);
+                  if(originalText.includes('QR')) {
+                      btn.style.background = 'var(--sage-800)';
+                      btn.style.color = '#fff';
+                      btn.style.borderColor = 'var(--sage-800)';
+                  } else {
+                      btn.style.background = '#FFFFFF';
+                      btn.style.color = 'var(--sage-700)';
+                      btn.style.borderColor = 'var(--sage-100)';
+                  }
+              }, 1500);
           }).catch(err => {
-              alert('Gagal menyalin kode: ' + err);
+              alert('Gagal menyalin: ' + err);
           });
       }
       </script>
@@ -625,14 +645,25 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     $kelas_ini = $q_dk ? mysqli_fetch_assoc($q_dk) : null;
     if (!$kelas_ini): ?>
       <div class="empty-state"><p>Kelas tidak ditemukan atau Anda tidak memiliki akses.</p></div>
-    <?php else: ?>
+    <?php else: 
+        $protokol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
+        $base_url = $protokol . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
+        $link_gabung = $base_url . "/murid.php?kode=" . urlencode($kelas_ini['kode_gabung']);
+        $qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" . urlencode($link_gabung);
+    ?>
       <div class="card-manage">
         <a href="guru.php?page=kelas" style="display:inline-flex; align-items:center; gap:6px; color:var(--sage-600); text-decoration:none; font-weight:700; font-size:13px; margin-bottom:12px;">← Kembali ke Daftar Kelas</a>
         <h2>Daftar Tugas Kelas: <?= e($kelas_ini['nama_kelas']) ?></h2>
         
-        <div style="margin-top: 12px; display: inline-flex; align-items: center; gap: 12px; background: var(--nav-yellow); padding: 8px 16px; border-radius: var(--radius-sm); border: 1px dashed #E2D38A;">
-            <span style="font-size: 13px; font-weight: 700; color: var(--sage-800);">Kode Gabung: <strong id="kode-detail-<?= $kelas_ini['id'] ?>"><?= e($kelas_ini['kode_gabung']) ?></strong></span>
-            <button type="button" class="btn-copy" onclick="salinKode('<?= e($kelas_ini['kode_gabung']) ?>', this)">📋 Salin</button>
+        <div style="margin-top: 14px; background: #FAFCFA; padding: 12px 16px; border-radius: var(--radius-sm); border: 1px solid var(--sage-100); max-width: 480px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div style="font-size: 13.5px; font-weight: 700; color: var(--sage-800); font-family: monospace;">
+                Kode: <span id="kode-detail-<?= $kelas_ini['id'] ?>"><?= e($kelas_ini['kode_gabung']) ?></span>
+            </div>
+            <div class="kode-actions">
+                <button type="button" class="btn-action-clean" onclick="salinKode('<?= e($kelas_ini['kode_gabung']) ?>', this)">📋 Kode</button>
+                <button type="button" class="btn-action-clean" onclick="salinKode('<?= e($link_gabung) ?>', this)">🔗 Link</button>
+                <button type="button" class="btn-action-clean" style="background: var(--sage-800); color: #fff; border-color: var(--sage-800);" onclick="window.open('<?= $qr_url ?>', '_blank', 'width=400,height=400')">📱 QR</button>
+            </div>
         </div>
       </div>
 
@@ -649,7 +680,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                   $teks_deadline = date('d M Y, H:i', strtotime($tugas['deadline']));
                   if(strtotime($tugas['deadline']) < time()) { $is_expired = true; }
               }
-              // Tarik waktu dipublis apabila kolom created_at tersedia
               $tgl_publis = isset($tugas['created_at']) ? date('d M Y, H:i', strtotime($tugas['created_at'])) : '-';
           ?>
               <div class="class-card" style="display:flex; flex-direction:column;">
@@ -659,7 +689,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                       ⏳ Deadline: <strong style="color: <?= $is_expired ? '#C62828' : 'var(--sage-800)' ?>;"><?= $teks_deadline ?></strong> 
                       <?= $is_expired ? '<span style="color: #C62828; font-weight: bold; margin-left: 6px;">(Terkunci)</span>' : '' ?>
                   </p>
-                  <!-- TOMBOL SHORTCUT HALAMAN DETAIL & PENILAIAN -->
                   <a href="guru.php?page=detail_tugas&id=<?= $tugas_id ?>" class="btn-primary" style="margin-top:auto; justify-content:center;">Buka Detail & Penilaian →</a>
               </div>
           <?php endwhile; ?>
@@ -670,12 +699,19 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       function salinKode(kode, btn) {
           navigator.clipboard.writeText(kode).then(() => {
               let originalText = btn.innerHTML;
-              btn.innerHTML = '✅ Tersalin!';
+              btn.innerHTML = '✓';
               btn.style.background = '#2E7D32';
               btn.style.color = '#fff';
               btn.style.borderColor = '#2E7D32';
-              setTimeout(() => { btn.innerHTML = originalText; btn.style.background = '#fff'; btn.style.color = 'var(--sage-800)'; btn.style.borderColor = '#E2D38A'; }, 2000);
-          }).catch(err => { alert('Gagal menyalin kode: ' + err); });
+              setTimeout(() => { 
+                  btn.innerHTML = originalText; 
+                  if(originalText.includes('QR')) {
+                      btn.style.background = 'var(--sage-800)'; btn.style.color = '#fff'; btn.style.borderColor = 'var(--sage-800)';
+                  } else {
+                      btn.style.background = '#FFFFFF'; btn.style.color = 'var(--sage-700)'; btn.style.borderColor = 'var(--sage-100)'; 
+                  }
+              }, 1500);
+          }).catch(err => { alert('Gagal menyalin: ' + err); });
       }
       </script>
     <?php endif; ?>
@@ -1329,27 +1365,21 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 </div>
 
 <script>
-// Ambil jumlah notif awal saat halaman pertama kali dimuat
 let lastNotifCount = <?= count($notif_tugas_belum_dinilai ?? []) ?>; 
 
-// Cek tugas baru setiap 5 detik (5000 ms)
 setInterval(() => {
     fetch('guru.php?page=api_cek_notif')
     .then(res => res.json())
     .then(data => {
         if (data.jumlah_notif > lastNotifCount) {
-            // Putar Suara
             const audio = document.getElementById('audioNotif');
             audio.play().catch(e => console.log('Autoplay audio dicegah oleh browser.'));
             
-            // Munculkan Pop-up Toast
             const toast = document.getElementById('toastNotif');
             toast.style.bottom = '32px';
             
-            // Sembunyikan toast otomatis setelah 6 detik
             setTimeout(() => { toast.style.bottom = '-100px'; }, 6000);
             
-            // Tampilkan titik merah di icon bel jika belum ada
             let bell = document.querySelector('.header-icons a[title="Notifikasi"]');
             if(bell && !bell.querySelector('.notif-dot')) {
                 bell.innerHTML += '<div class="notif-dot"></div>';
@@ -1361,7 +1391,6 @@ setInterval(() => {
     .catch(err => console.error("Gagal cek notifikasi:", err));
 }, 5000);
 
-// Script Dropdown Notifikasi
 function toggleNotif(e) {
     e.preventDefault();
     document.getElementById('dropdown-notif').classList.toggle('show');
@@ -1375,7 +1404,5 @@ window.addEventListener('click', function(e) {
     }
 });
 </script>
-<!-- ================= END AREA SCRIPT NOTIFIKASI ================= -->
-
 </body>
 </html>
