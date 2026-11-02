@@ -385,6 +385,7 @@ $r_kls = mysqli_query($koneksi, "SELECT id AS id_kelas, nama_kelas, kode_gabung,
 if($r_kls) { while ($r = mysqli_fetch_assoc($r_kls)) $list_kelas[] = $r; }
 
 $jml_kelas = count($list_kelas);
+<<<<<<< HEAD
 
 // URL undangan kelas mengikuti alamat yang dipakai saat guru membuka SLearning.
 // Jika ingin dipindai dari HP saat XAMPP, buka SLearning melalui IP LAN komputer.
@@ -394,6 +395,8 @@ $scriptDir = str_replace('\\\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
 $scriptDir = rtrim($scriptDir, '/');
 $join_base_url = $scheme . '://' . $host . ($scriptDir ? $scriptDir : '') . '/murid.php?page=kelas&gabung=';
 
+=======
+>>>>>>> ece45c296bc945f6cc069b12a8c5cf02e3fc008f
 $q_tugas = mysqli_query($koneksi, "SELECT COUNT(*) AS c FROM tugas WHERE guru_id=$user_id");
 $jml_tugas = $q_tugas ? mysqli_fetch_assoc($q_tugas)['c'] : 0;
 
@@ -572,6 +575,25 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     .beranda-hero { flex-direction: column; align-items: flex-start; gap: 20px; }
     .dashboard-panels { grid-template-columns: 1fr; }
 }
+<<<<<<< HEAD
+=======
+
+/* CSS DROPDOWN NOTIFIKASI */
+.notif-container { position: relative; }
+.notif-dropdown { position: absolute; top: 55px; right: 0; width: 340px; background: #fff; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); border: 1px solid var(--sage-100); z-index: 1000; display: none; flex-direction: column; overflow: hidden; transform-origin: top right; animation: scaleIn 0.2s ease-out; }
+.notif-dropdown.show { display: flex; }
+@keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+.notif-header { padding: 16px; border-bottom: 1px solid var(--sage-50); background: var(--sage-50); display: flex; justify-content: space-between; align-items: center; }
+.notif-header h4 { font-size: 14px; margin: 0; color: var(--sage-900); font-weight: 800; }
+.notif-body { max-height: 350px; overflow-y: auto; }
+.notif-item { display: flex; align-items: flex-start; gap: 14px; padding: 16px; border-bottom: 1px solid var(--sage-50); text-decoration: none; transition: background 0.2s; }
+.notif-item:hover { background: #FAFCFA; }
+.notif-item:last-child { border-bottom: none; }
+.notif-icon { width: 36px; height: 36px; background: var(--nav-yellow); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; border: 1px solid #E2D38A; }
+.notif-footer { padding: 12px; text-align: center; border-top: 1px solid var(--sage-50); background: #fff; }
+.notif-footer a { font-size: 12px; font-weight: 700; color: var(--sage-600); text-decoration: none; transition: 0.2s; }
+.notif-footer a:hover { color: var(--sage-800); text-decoration: underline; }
+>>>>>>> ece45c296bc945f6cc069b12a8c5cf02e3fc008f
 </style>
 </head>
 <body>
