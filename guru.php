@@ -235,7 +235,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         $pass_baru = $_POST['password_baru'] ?? '';
 
         if ($nama_baru !== '' && $email_baru !== '') {
-            $q_cek = mysqli_query($koneksi, "SELECT password, foto_profil FROM login WHERE id = $user_id LIMIT 1");
+            $q_cek = mysqli_query($koneksi, "SELECT password FROM login WHERE id = $user_id LIMIT 1");
             $res_cek = $q_cek ? mysqli_fetch_assoc($q_cek) : null;
 
             $update_pass_sql = "";
@@ -301,7 +301,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
     }
     if ($aksi === 'hapus_absen') {
         $id = (int)($_POST['absen_id'] ?? 0);
-        mysqli_query($koneksi, "DELETE FROM absensi_hadir WHERE absensi_id=$id");
         mysqli_query($koneksi, "DELETE FROM absensi WHERE id=$id AND guru_id=$user_id");
         flash_set('Sesi absensi berhasil dihapus.');
         header("Location: guru.php?page=absensi"); exit;
@@ -379,13 +378,22 @@ $user = $q_user ? mysqli_fetch_assoc($q_user) : ['nama' => 'Guru', 'username' =>
 $nama_guru = $user['nama'] ?? 'Guru';
 $username_guru = $user['username'] ?? 'guru';
 $email_guru = $user['email'] ?? '';
-$foto_profil = $user['foto_profil'] ?? '';
 
+// Data Pendukung Dasbor
 $list_kelas = [];
 $r_kls = mysqli_query($koneksi, "SELECT id AS id_kelas, nama_kelas, kode_gabung, (SELECT COUNT(*) FROM anggota_kelas ak WHERE ak.kelas_id=k.id) AS jml_murid FROM kelas k WHERE k.guru_id=$user_id ORDER BY k.id DESC");
 if($r_kls) { while ($r = mysqli_fetch_assoc($r_kls)) $list_kelas[] = $r; }
 
 $jml_kelas = count($list_kelas);
+
+// URL undangan kelas mengikuti alamat yang dipakai saat guru membuka SLearning.
+// Jika ingin dipindai dari HP saat XAMPP, buka SLearning melalui IP LAN komputer.
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$scriptDir = str_replace('\\\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
+$scriptDir = rtrim($scriptDir, '/');
+$join_base_url = $scheme . '://' . $host . ($scriptDir ? $scriptDir : '') . '/murid.php?page=kelas&gabung=';
+
 $q_tugas = mysqli_query($koneksi, "SELECT COUNT(*) AS c FROM tugas WHERE guru_id=$user_id");
 $jml_tugas = $q_tugas ? mysqli_fetch_assoc($q_tugas)['c'] : 0;
 
@@ -510,7 +518,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .btn-card-action { display: flex; gap: 10px; margin-top: auto; }
 .btn-hapus { background: transparent; color: #E07A5F; border: 1px solid #F4E3E0; padding: 10px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
 .btn-hapus:hover { background: #FFF3F0; }
-.btn-masuk-kelas { background: var(--sage-500); color: #fff; border: none; padding: 10px 16px; border-radius: var(--radius-sm); font-size: 12.5px; font-weight: 700; flex: 1; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
+.btn-masuk-kelas { background: var(--sage-500); color: #fff; border: none; padding: 10px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; flex: 1; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
 .btn-masuk-kelas:hover { background: var(--sage-600); }
 
 .empty-state { text-align: center; padding: 40px 20px; color: var(--sage-600); background: var(--bg-card); border-radius: var(--radius-lg); border: 1px dashed var(--sage-300); }
@@ -544,6 +552,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
 .quick-btn { background: #FFFFFF; border: 1px solid var(--sage-100); border-radius: var(--radius-md); padding: 20px; text-decoration: none; color: var(--sage-800); font-weight: 700; display: flex; align-items: center; gap: 14px; transition: 0.3s; box-shadow: var(--shadow-sm); }
 .quick-btn:hover { background: var(--sage-50); border-color: var(--sage-300); transform: translateY(-2px); }
+.quick-btn svg { width: 22px; height: 22px; color: var(--sage-500); }
 
 /* Style Khusus Bagian Detail Tugas & Status Murid (Hijau / Merah) */
 .task-section-box { background: #fff; border-radius: var(--radius-md); border: 1px solid var(--sage-100); margin-bottom: 24px; overflow: hidden; box-shadow: var(--shadow-sm); }
@@ -554,7 +563,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .badge-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 50px; }
 .badge-hijau { background: #E8F5E9; color: #2E7D32; border: 1px solid #C8E6C9; }
 .badge-merah { background: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2; }
-.badge-kuning { background: #FFF8D6; color: #856404; border: 1px solid #E2D38A; }
+.form-penilaian-inline { display: flex; gap: 8px; align-items: center; background: #FAFCFA; padding: 12px; border-radius: 12px; border: 1px solid var(--sage-100); }
 
 @media (max-width: 768px) {
     .header-top { flex-wrap: wrap; gap: 16px; }
@@ -563,22 +572,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     .beranda-hero { flex-direction: column; align-items: flex-start; gap: 20px; }
     .dashboard-panels { grid-template-columns: 1fr; }
 }
-
-/* CSS DROPDOWN NOTIFIKASI */
-.notif-container { position: relative; }
-.notif-dropdown { position: absolute; top: 55px; right: 0; width: 340px; background: #fff; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); border: 1px solid var(--sage-100); z-index: 1000; display: none; flex-direction: column; overflow: hidden; transform-origin: top right; animation: scaleIn 0.2s ease-out; }
-.notif-dropdown.show { display: flex; }
-@keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-.notif-header { padding: 16px; border-bottom: 1px solid var(--sage-50); background: var(--sage-50); display: flex; justify-content: space-between; align-items: center; }
-.notif-header h4 { font-size: 14px; margin: 0; color: var(--sage-900); font-weight: 800; }
-.notif-body { max-height: 350px; overflow-y: auto; }
-.notif-item { display: flex; align-items: flex-start; gap: 14px; padding: 16px; border-bottom: 1px solid var(--sage-50); text-decoration: none; transition: background 0.2s; }
-.notif-item:hover { background: #FAFCFA; }
-.notif-item:last-child { border-bottom: none; }
-.notif-icon { width: 36px; height: 36px; background: var(--nav-yellow); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; border: 1px solid #E2D38A; }
-.notif-footer { padding: 12px; text-align: center; border-top: 1px solid var(--sage-50); background: #fff; }
-.notif-footer a { font-size: 12px; font-weight: 700; color: var(--sage-600); text-decoration: none; transition: 0.2s; }
-.notif-footer a:hover { color: var(--sage-800); text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -589,52 +582,16 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
       Slearning
     </a>
+    
     <div class="header-icons">
-      
-      <!-- DROPDOWN NOTIFIKASI MULAI -->
-      <div class="notif-container" id="notif-wrapper">
-          <a href="#" title="Notifikasi" class="icon-btn" onclick="toggleNotif(event)">
-            <?php if(!empty($notif_tugas_belum_dinilai)): ?><div class="notif-dot"></div><?php endif; ?>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          </a>
-          
-          <div class="notif-dropdown" id="dropdown-notif">
-              <div class="notif-header">
-                  <h4>Notifikasi Tugas Baru</h4>
-                  <span style="font-size: 11px; background: #E07A5F; color: #fff; padding: 2px 8px; border-radius: 50px; font-weight: 800;"><?= count($notif_tugas_belum_dinilai ?? []) ?> Baru</span>
-              </div>
-              <div class="notif-body">
-                  <?php if(empty($notif_tugas_belum_dinilai)): ?>
-                      <div style="padding: 30px 16px; text-align: center; color: var(--sage-600); font-size: 13px;">Belum ada tugas baru yang terkumpul.</div>
-                  <?php else: ?>
-                      <?php foreach($notif_tugas_belum_dinilai as $nt): ?>
-                          <a href="guru.php?page=detail_tugas&id=<?= $nt['tugas_id'] ?>" class="notif-item">
-                              <div class="notif-icon">📄</div>
-                              <div>
-                                  <strong style="display: block; font-size: 14px; color: var(--sage-900);"><?= e($nt['nama_murid']) ?></strong>
-                                  <span style="display: block; font-size: 12px; color: var(--sage-600); margin-top: 4px; line-height: 1.4;">Mengumpulkan tugas: <strong><?= e($nt['judul_tugas']) ?></strong></span>
-                                  <span style="display: block; font-size: 11px; color: #9ca3af; margin-top: 6px;">📅 <?= date('d M Y, H:i', strtotime($nt['dikumpulkan_at'])) ?></span>
-                              </div>
-                          </a>
-                      <?php endforeach; ?>
-                  <?php endif; ?>
-              </div>
-              <div class="notif-footer">
-                  <a href="guru.php?page=beranda">Lihat Semua di Dashboard Beranda →</a>
-              </div>
-          </div>
-      </div>
-      <!-- DROPDOWN NOTIFIKASI SELESAI -->
-      
-      <a href="guru.php?page=profil" title="Profil Anda" style="padding:0; border:none; overflow:hidden; width:44px; height:44px; border-radius:50%; background: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 2px solid var(--sage-100); transition: 0.3s;">
-        <?php if(!empty($foto_profil)): ?>
-            <img src="uploads/<?= e($foto_profil) ?>" alt="Profil" style="width:100%; height:100%; object-fit:cover;">
-        <?php else: ?>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 22px; height: 22px; color: var(--sage-600);"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <?php endif; ?>
+      <a href="#" title="Notifikasi">
+        <?php if(!empty($notif_tugas_belum_dinilai)): ?><div class="notif-dot"></div><?php endif; ?>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       </a>
-
-      <a href="logout.php" onclick="return confirm('Keluar dari Slearning?')" title="Keluar" class="icon-btn">
+      <a href="guru.php?page=profil" title="Profil">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </a>
+      <a href="logout.php" onclick="return confirm('Keluar dari Slearning?')" title="Keluar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </a>
     </div>
@@ -817,12 +774,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       </div>
     <?php else: ?>
       <div class="class-grid">
-        <?php foreach ($list_kelas as $kls): 
-            $protokol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
-            $base_url = $protokol . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
-            $link_gabung = $base_url . "/murid.php?kode=" . urlencode($kls['kode_gabung']);
-            $qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" . urlencode($link_gabung);
-        ?>
+        <?php foreach ($list_kelas as $kls): ?>
         <div class="class-card">
           <div class="class-card-header">
             <div class="class-icon">
@@ -840,6 +792,23 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
           <div class="kode-badge" title="Kode Gabung Kelas">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
             <?= e($kls['kode_gabung']) ?>
+          </div>
+
+          <?php
+            $link_gabung_kelas = $join_base_url . rawurlencode($kls['kode_gabung']);
+            $qr_gabung_kelas = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=' . rawurlencode($link_gabung_kelas);
+          ?>
+          <div style="background:#F8FBF8;border:1px solid var(--sage-100);border-radius:14px;padding:14px;margin:0 0 14px;">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+              <img src="<?= e($qr_gabung_kelas) ?>" alt="QR Code gabung <?= e($kls['nama_kelas']) ?>" loading="lazy" style="width:112px;height:112px;object-fit:contain;background:#fff;border:1px solid var(--sage-100);border-radius:8px;padding:4px;">
+              <div style="flex:1;min-width:150px;">
+                <strong style="display:block;font-size:13px;color:var(--sage-800);margin-bottom:5px;">Akses Cepat Kelas</strong>
+                <p style="font-size:11px;color:var(--sage-600);line-height:1.5;margin-bottom:9px;">Pindai QR atau bagikan link untuk bergabung.</p>
+                <button type="button" class="btn-masuk-kelas" style="border:0;cursor:pointer;width:100%;justify-content:center;" onclick="salinLinkKelas(<?= json_encode($link_gabung_kelas, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP) ?>, this)">Salin Link Kelas</button>
+                <a href="<?= e($qr_gabung_kelas) ?>" target="_blank" rel="noopener" style="display:block;text-align:center;font-size:11px;color:var(--sage-600);margin-top:7px;">Buka QR ukuran penuh</a>
+              </div>
+            </div>
+            <input type="text" readonly value="<?= e($link_gabung_kelas) ?>" aria-label="Link gabung kelas" onclick="this.select()" style="margin-top:10px;width:100%;padding:8px 10px;border:1px solid var(--sage-100);border-radius:8px;font-size:11px;color:var(--sage-800);background:#fff;">
           </div>
 
           <div class="btn-card-action">
@@ -861,32 +830,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
         </div>
         <?php endforeach; ?>
       </div>
-
-      <script>
-      function salinKode(kode, btn) {
-          navigator.clipboard.writeText(kode).then(() => {
-              let originalText = btn.innerHTML;
-              btn.innerHTML = '✓';
-              btn.style.background = '#2E7D32';
-              btn.style.color = '#fff';
-              btn.style.borderColor = '#2E7D32';
-              setTimeout(() => {
-                  btn.innerHTML = originalText;
-                  if(originalText.includes('QR')) {
-                      btn.style.background = 'var(--sage-800)';
-                      btn.style.color = '#fff';
-                      btn.style.borderColor = 'var(--sage-800)';
-                  } else {
-                      btn.style.background = '#FFFFFF';
-                      btn.style.color = 'var(--sage-700)';
-                      btn.style.borderColor = 'var(--sage-100)';
-                  }
-              }, 1500);
-          }).catch(err => {
-              alert('Gagal menyalin: ' + err);
-          });
-      }
-      </script>
     <?php endif; ?>
 
 
@@ -899,12 +842,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     
     <?php if (!$kelas_ini): ?>
       <div class="empty-state"><p>Kelas tidak ditemukan atau Anda tidak memiliki akses.</p></div>
-    <?php else: 
-        $protokol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
-        $base_url = $protokol . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
-        $link_gabung = $base_url . "/murid.php?kode=" . urlencode($kelas_ini['kode_gabung']);
-        $qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" . urlencode($link_gabung);
-    ?>
+    <?php else: ?>
       <div class="card-manage">
         <a href="guru.php?page=kelas" style="display:inline-flex; align-items:center; gap:6px; color:var(--sage-600); text-decoration:none; font-weight:700; font-size:13px; margin-bottom:12px;">← Kembali ke Daftar Kelas</a>
         <h2>Pantauan Tugas & Status Pengerjaan Murid: <?= e($kelas_ini['nama_kelas']) ?></h2>
@@ -917,9 +855,8 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       
       if(mysqli_num_rows($q_tugas_kelas) === 0): ?>
           <div class="empty-state"><p>Belum ada tugas yang dibuat untuk kelas ini.</p></div>
-      <?php else: ?>
-          <div class="class-grid">
-          <?php while($tugas = mysqli_fetch_assoc($q_tugas_kelas)): 
+      <?php else: 
+          while($tugas = mysqli_fetch_assoc($q_tugas_kelas)): 
               $tugas_id = $tugas['id'];
               
               // Cek status deadline apakah sudah expired (lewat waktu)
@@ -1252,31 +1189,15 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       
       <form action="guru.php?page=profil" method="POST" style="margin-top: 24px;">
         <input type="hidden" name="aksi" value="update_profil">
-
-        <div style="display: flex; align-items: center; gap: 24px; margin-bottom: 24px; padding: 20px; background: var(--sage-body); border-radius: var(--radius-sm); border: 1px dashed var(--sage-300);">
-            <div style="width: 80px; height: 80px; border-radius: 50%; overflow: hidden; background: #fff; border: 2px solid var(--sage-100); flex-shrink: 0; display:flex; align-items:center; justify-content:center;">
-                <?php if(!empty($foto_profil)): ?>
-                    <img src="uploads/<?= e($foto_profil) ?>" alt="Profil" style="width:100%; height:100%; object-fit:cover;">
-                <?php else: ?>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:40px; height:40px; color:var(--sage-300);"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                <?php endif; ?>
-            </div>
-            <div style="flex: 1;">
-                <label class="form-label" style="margin-bottom: 4px;">Ubah Foto Profil</label>
-                <input type="file" name="foto_profil" accept="image/png, image/jpeg, image/jpg, image/gif" class="input-elegant" style="padding: 10px; background: #fff;">
-                <p style="font-size: 12px; color: var(--sage-600); margin-top: 6px;">Format yang didukung: JPG, JPEG, PNG, GIF. (Opsional)</p>
-            </div>
-        </div>
-
         <div class="form-grid">
           <div><label class="form-label">Nama Lengkap</label><input type="text" name="nama" class="input-elegant" value="<?= e($nama_guru) ?>" required></div>
           <div><label class="form-label">Alamat Email</label><input type="email" name="email" class="input-elegant" value="<?= e($email_guru) ?>" required></div>
         </div>
         <div class="form-grid">
-          <div><label class="form-label">Password Lama</label><input type="password" name="password_lama" class="input-elegant" placeholder="Isi hanya jika ingin mengubah password..."></div>
-          <div><label class="form-label">Password Baru</label><input type="password" name="password_baru" class="input-elegant" placeholder="Isi hanya jika ingin mengubah password..."></div>
+          <div><label class="form-label">Password Lama</label><input type="password" name="password_lama" class="input-elegant" placeholder="Password lama..."></div>
+          <div><label class="form-label">Password Baru</label><input type="password" name="password_baru" class="input-elegant" placeholder="Password baru..."></div>
         </div>
-        <button type="submit" class="btn-primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Simpan Perubahan Profil</button>
+        <button type="submit" class="btn-primary">Simpan Perubahan Profil</button>
       </form>
     </div>
 
@@ -1350,59 +1271,30 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
   <?php endif; ?>
 
 </main>
-
-<!-- ================= AREA SCRIPT NOTIFIKASI REAL-TIME & DROPDOWN ================= -->
-<audio id="audioNotif" src="assets/audio/ting.mp3" preload="auto"></audio>
-
-<div id="toastNotif" style="position:fixed; bottom:-100px; right:32px; background:#fff; border-left:4px solid var(--sage-500); padding:16px 24px; box-shadow:var(--shadow-lg); border-radius:var(--radius-sm); z-index:9999; transition:all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55); display:flex; align-items:center; gap:16px;">
-    <div style="background:var(--sage-50); padding:10px; border-radius:50%; display:flex; color:var(--sage-600);">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-    </div>
-    <div>
-        <strong style="display:block; font-size:15px; color:var(--sage-900); margin-bottom:2px;">Tugas Baru Masuk!</strong>
-        <span style="font-size:13px; color:var(--sage-600);">Ada tugas yang baru dikumpulkan. Refresh atau cek notifikasi.</span>
-    </div>
-</div>
-
 <script>
-let lastNotifCount = <?= count($notif_tugas_belum_dinilai ?? []) ?>; 
-
-setInterval(() => {
-    fetch('guru.php?page=api_cek_notif')
-    .then(res => res.json())
-    .then(data => {
-        if (data.jumlah_notif > lastNotifCount) {
-            const audio = document.getElementById('audioNotif');
-            audio.play().catch(e => console.log('Autoplay audio dicegah oleh browser.'));
-            
-            const toast = document.getElementById('toastNotif');
-            toast.style.bottom = '32px';
-            
-            setTimeout(() => { toast.style.bottom = '-100px'; }, 6000);
-            
-            let bell = document.querySelector('.header-icons a[title="Notifikasi"]');
-            if(bell && !bell.querySelector('.notif-dot')) {
-                bell.innerHTML += '<div class="notif-dot"></div>';
-            }
-            
-            lastNotifCount = data.jumlah_notif; 
-        }
-    })
-    .catch(err => console.error("Gagal cek notifikasi:", err));
-}, 5000);
-
-function toggleNotif(e) {
-    e.preventDefault();
-    document.getElementById('dropdown-notif').classList.toggle('show');
+function salinLinkKelas(link, tombol) {
+  const selesai = () => {
+    const teksLama = tombol.textContent;
+    tombol.textContent = 'Link Tersalin!';
+    setTimeout(() => tombol.textContent = teksLama, 1800);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(link).then(selesai).catch(() => salinManual(link, selesai));
+  } else {
+    salinManual(link, selesai);
+  }
 }
-
-window.addEventListener('click', function(e) {
-    const wrapper = document.getElementById('notif-wrapper');
-    const dropdown = document.getElementById('dropdown-notif');
-    if (wrapper && !wrapper.contains(e.target)) {
-        dropdown.classList.remove('show');
-    }
-});
+function salinManual(teks, callback) {
+  const input = document.createElement('textarea');
+  input.value = teks;
+  input.style.position = 'fixed';
+  input.style.opacity = '0';
+  document.body.appendChild(input);
+  input.select();
+  try { document.execCommand('copy'); callback(); }
+  catch (e) { window.prompt('Salin link kelas ini:', teks); }
+  input.remove();
+}
 </script>
 </body>
 </html>
