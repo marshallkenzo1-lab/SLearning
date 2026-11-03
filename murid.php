@@ -1,11 +1,10 @@
 <?php
-// SLearning — Dashboard Murid (FULL VERSION - Live Quiz, Lobi & Halaman Notifikasi)
+// SLearning — Dashboard Murid (FULL VERSION - Landing Page "Sedang Menunggu Izin" & Approval System)
 session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
 
 if (!isset($_SESSION['user_id'])) {
-    // Simpan kode undangan agar tetap diproses setelah murid login.
     if (isset($_GET['gabung'])) {
         $_SESSION['kode_gabung_pending'] = strtoupper(trim((string)$_GET['gabung']));
     }
@@ -23,6 +22,13 @@ foreach (['nama','username','email','jenis','level','foto'] as $k) $_SESSION[$k]
 $nama_murid = $user['nama']; 
 $username = $user['username'];
 $foto_profil = $user['foto'] ?? '';
+
+// AUTO-MIGRATION DATABASE: Tambahkan kolom status pada anggota_kelas jika belum ada
+$cekStatusAK = @mysqli_query($koneksi, "SHOW COLUMNS FROM anggota_kelas LIKE 'status'");
+if ($cekStatusAK && mysqli_num_rows($cekStatusAK) === 0) {
+    @mysqli_query($koneksi, "ALTER TABLE anggota_kelas ADD COLUMN status ENUM('pending','disetujui','ditolak') NOT NULL DEFAULT 'pending'");
+    @mysqli_query($koneksi, "UPDATE anggota_kelas SET status='disetujui' WHERE status IS NULL OR status=''");
+}
 
 function set_flash_notification($pesan, $tipe = 'success', $judul = 'Berhasil!') {
     $_SESSION['swal_msg'] = ['title' => $judul, 'text' => $pesan, 'icon' => $tipe];
@@ -98,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profil'])) {
     mysqli_stmt_close($upd); header("Location: murid.php?page=profil"); exit;
 }
 
-// 2. Proses Gabung Kelas
+// 2. Proses Gabung Kelas (Memerlukan Izin Guru)
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['gabung_kelas'])) {
     $kode = strtoupper(trim($_POST['kode_gabung'] ?? ''));
     if ($kode==='') { set_flash_notification('Masukkan kode kelas.', 'error'); } 
@@ -108,20 +114,33 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['gabung_kelas'])) {
         $kls = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
         if (!$kls) { set_flash_notification('Kode kelas tidak ditemukan.', 'error', 'Gagal'); } 
         else {
-            $kelas_id = $kls['id'];
-            $s = mysqli_prepare($koneksi, "SELECT id FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1");
+            $kelas_id = (int)$kls['id'];
+            $s = mysqli_prepare($koneksi, "SELECT id, COALESCE(status, 'disetujui') AS status_izin FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1");
             mysqli_stmt_bind_param($s,'ii',$kelas_id,$uid); mysqli_stmt_execute($s);
-            if (mysqli_fetch_assoc(mysqli_stmt_get_result($s))) { 
-                set_flash_notification('Kamu sudah tergabung di kelas tersebut.', 'warning', 'Informasi'); 
+            $ada = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
+            
+            if ($ada) { 
+                if ($ada['status_izin'] === 'disetujui') {
+                    set_flash_notification('Kamu sudah tergabung di kelas tersebut.', 'info', 'Sudah Bergabung'); 
+                    header('Location: murid.php?page=detail_kelas&id='.$kelas_id); exit;
+                } elseif ($ada['status_izin'] === 'pending') {
+                    set_flash_notification('Permintaan bergabung kamu masih menunggu persetujuan guru.', 'warning', 'Menunggu Izin'); 
+                    header('Location: murid.php?page=detail_kelas&id='.$kelas_id); exit;
+                } else {
+                    mysqli_query($koneksi, "UPDATE anggota_kelas SET status='pending' WHERE id=".(int)$ada['id']);
+                    set_flash_notification('Permintaan bergabung telah dikirim ulang ke guru.', 'success', 'Permintaan Terkirim');
+                    header('Location: murid.php?page=detail_kelas&id='.$kelas_id); exit;
+                }
             } else {
-                $ins = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id, user_id) VALUES (?,?)");
+                $ins = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id, user_id, status) VALUES (?,?,'pending')");
                 mysqli_stmt_bind_param($ins,'ii',$kelas_id,$uid);
                 if (mysqli_stmt_execute($ins)) { 
-                    set_flash_notification('Berhasil bergabung ke kelas ' . $kls['nama_kelas'] . '.', 'success', 'Berhasil Masuk Kelas!'); 
+                    set_flash_notification('Permintaan bergabung ke kelas ' . $kls['nama_kelas'] . ' telah dikirim! Silakan tunggu izin dari guru.', 'success', 'Menunggu Persetujuan'); 
+                    mysqli_stmt_close($ins);
+                    header('Location: murid.php?page=detail_kelas&id='.$kelas_id); exit;
                 }
                 mysqli_stmt_close($ins);
             }
-            mysqli_stmt_close($s);
         }
     }
     header('Location: murid.php?page=kelas'); exit;
@@ -144,21 +163,26 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && (isset($_GET['gabung']) || !empty($
             set_flash_notification('Kelas tidak ditemukan. Minta link terbaru dari guru.', 'error', 'Link Tidak Valid');
         } else {
             $kelas_link_id = (int)$kelas_link['id'];
-            $cek_anggota_link = mysqli_prepare($koneksi, "SELECT id FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1");
+            $cek_anggota_link = mysqli_prepare($koneksi, "SELECT id, COALESCE(status, 'disetujui') AS status_izin FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1");
             mysqli_stmt_bind_param($cek_anggota_link, 'ii', $kelas_link_id, $uid);
             mysqli_stmt_execute($cek_anggota_link);
             $sudah_gabung_link = mysqli_fetch_assoc(mysqli_stmt_get_result($cek_anggota_link));
             mysqli_stmt_close($cek_anggota_link);
 
             if ($sudah_gabung_link) {
-                set_flash_notification('Kamu sudah tergabung di kelas ' . $kelas_link['nama_kelas'] . '.', 'info', 'Sudah Bergabung');
+                if ($sudah_gabung_link['status_izin'] === 'disetujui') {
+                    set_flash_notification('Kamu sudah tergabung di kelas ' . $kelas_link['nama_kelas'] . '.', 'info', 'Sudah Bergabung');
+                } else {
+                    set_flash_notification('Permintaan kamu sedang menunggu izin dari guru.', 'warning', 'Menunggu Persetujuan');
+                }
+                header('Location: murid.php?page=detail_kelas&id='.$kelas_link_id); exit;
             } else {
-                $gabung_link = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id, user_id) VALUES (?,?)");
+                $gabung_link = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id, user_id, status) VALUES (?,?,'pending')");
                 mysqli_stmt_bind_param($gabung_link, 'ii', $kelas_link_id, $uid);
                 if (mysqli_stmt_execute($gabung_link)) {
-                    set_flash_notification('Berhasil bergabung ke kelas ' . $kelas_link['nama_kelas'] . '.', 'success', 'Berhasil Masuk Kelas!');
-                } else {
-                    set_flash_notification('Gagal bergabung. Coba lagi atau gunakan kode kelas.', 'error', 'Gagal');
+                    set_flash_notification('Permintaan bergabung ke kelas ' . $kelas_link['nama_kelas'] . ' telah dikirim!', 'success', 'Menunggu Persetujuan');
+                    mysqli_stmt_close($gabung_link);
+                    header('Location: murid.php?page=detail_kelas&id='.$kelas_link_id); exit;
                 }
                 mysqli_stmt_close($gabung_link);
             }
@@ -171,7 +195,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && (isset($_GET['gabung']) || !empty($
 // 3. Proses Isi Absensi
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['isi_absen'])) {
     $aid = (int)($_POST['absensi_id'] ?? 0); $status = $_POST['status'] ?? 'hadir';
-    $s = mysqli_prepare($koneksi, "SELECT a.id FROM absensi a JOIN anggota_kelas ak ON ak.kelas_id=a.kelas_id WHERE a.id=? AND ak.user_id=? LIMIT 1");
+    $s = mysqli_prepare($koneksi, "SELECT a.id FROM absensi a JOIN anggota_kelas ak ON ak.kelas_id=a.kelas_id WHERE a.id=? AND ak.user_id=? AND COALESCE(ak.status, 'disetujui')='disetujui' LIMIT 1");
     mysqli_stmt_bind_param($s,'ii',$aid,$uid); mysqli_stmt_execute($s);
     if (mysqli_fetch_assoc(mysqli_stmt_get_result($s))) {
         $ins = mysqli_prepare($koneksi, "INSERT INTO absensi_hadir (absensi_id, user_id, status) VALUES (?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status), waktu=CURRENT_TIMESTAMP");
@@ -184,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['isi_absen'])) {
 // 4. Proses Upload / Kumpulkan Tugas
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['kumpulkan_tugas'])) {
     $tid = (int)($_POST['tugas_id'] ?? 0);
-    $s = mysqli_prepare($koneksi, "SELECT t.id FROM tugas t JOIN anggota_kelas ak ON ak.kelas_id=t.kelas_id WHERE t.id=? AND ak.user_id=? LIMIT 1");
+    $s = mysqli_prepare($koneksi, "SELECT t.id FROM tugas t JOIN anggota_kelas ak ON ak.kelas_id=t.kelas_id WHERE t.id=? AND ak.user_id=? AND COALESCE(ak.status, 'disetujui')='disetujui' LIMIT 1");
     mysqli_stmt_bind_param($s,'ii',$tid,$uid); mysqli_stmt_execute($s);
     $valid = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
     
@@ -246,19 +270,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_quiz_hasil']))
 
 // Data Pendukung Dasbor
 $daftar_kelas = [];
-$s = mysqli_prepare($koneksi, "SELECT k.id, k.nama_kelas, k.kode_gabung, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id WHERE ak.user_id=? ORDER BY k.id DESC");
+$s = mysqli_prepare($koneksi, "SELECT k.id, k.nama_kelas, k.kode_gabung, COALESCE(ak.status, 'disetujui') AS status_izin, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id WHERE ak.user_id=? ORDER BY k.id DESC");
 mysqli_stmt_bind_param($s,'i',$uid); mysqli_stmt_execute($s);
 $rr = mysqli_stmt_get_result($s); while ($r=mysqli_fetch_assoc($rr)) $daftar_kelas[]=$r;
 mysqli_stmt_close($s);
 
-$in_kelas = array_column($daftar_kelas,'id') ? implode(',', array_map('intval',array_column($daftar_kelas,'id'))) : '0';
+// Filter ID Kelas yang HANYA berstatus disetujui untuk tugas, absensi, quiz & notifikasi
+$approved_kelas_ids = array_filter(array_map(function($k) {
+    return $k['status_izin'] === 'disetujui' ? (int)$k['id'] : null;
+}, $daftar_kelas));
+$in_kelas = !empty($approved_kelas_ids) ? implode(',', $approved_kelas_ids) : '0';
+
 $stat_tugas_aktif = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM tugas WHERE kelas_id IN ($in_kelas)"))['jml'] ?? 0;
 $stat_quiz = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM quiz WHERE kelas_id IN ($in_kelas)"))['jml'] ?? 0;
 
-// Ambil daftar notifikasi (Tugas & Quiz terbaru)
+// Ambil daftar notifikasi (Tugas & Quiz dari kelas disetujui)
 $notifikasi_list = [];
-$qn = mysqli_query($koneksi, "SELECT judul_tugas AS judul, 'tugas' AS tipe, created_at AS tanggal FROM tugas WHERE kelas_id IN ($in_kelas) UNION SELECT judul AS judul, 'quiz' AS tipe, created_at AS tanggal FROM quiz WHERE kelas_id IN ($in_kelas) ORDER BY tanggal DESC LIMIT 15");
-while($qn && $rn = mysqli_fetch_assoc($qn)) { $notifikasi_list[] = $rn; }
+if ($in_kelas !== '0') {
+    $qn = mysqli_query($koneksi, "SELECT judul_tugas AS judul, 'tugas' AS tipe, created_at AS tanggal FROM tugas WHERE kelas_id IN ($in_kelas) UNION SELECT judul AS judul, 'quiz' AS tipe, created_at AS tanggal FROM quiz WHERE kelas_id IN ($in_kelas) ORDER BY tanggal DESC LIMIT 15");
+    while($qn && $rn = mysqli_fetch_assoc($qn)) { $notifikasi_list[] = $rn; }
+}
 $jml_notif = count($notifikasi_list);
 ?>
 <!DOCTYPE html>
@@ -268,7 +299,7 @@ $jml_notif = count($notifikasi_list);
 <title>Dashboard Murid — SLearning</title>
 <link rel="icon" type="image/png" href="assets/img/logo-smkn7.png">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
 :root{--nav-yellow:#FFF8D6;--nav-yellow-dark:#F2E7B5;--sage-body:#F4F7F5;--sage-50:#E8F0E8;--sage-100:#D1E0D1;--sage-500:#6D8C6D;--sage-600:#577357;--sage-800:#2F402F;--sage-900:#1D261D;--radius-sm:12px;--radius-md:16px;--radius-lg:24px; --bg-card: #FFFFFF; --shadow-sm: 0 4px 12px rgba(109, 140, 109, 0.05);}
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Plus Jakarta Sans',sans-serif}
 body { background-color: var(--sage-body); color: var(--sage-900); min-height: 100vh; padding-bottom: 60px; position: relative; overflow-x: hidden; }
@@ -323,9 +354,10 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .feedback-overlay h1 { font-size: 70px; font-weight: 900; margin-bottom: 10px; text-shadow: 0 4px 10px rgba(0,0,0,0.2); }
 .feedback-overlay p { font-size: 22px; font-weight: 700; background: rgba(0,0,0,0.2); padding: 12px 24px; border-radius: 50px; text-align: center; }
 .feedback-overlay .correct-ans-box { background: #fff; color: #C62828; padding: 12px 24px; border-radius: 12px; font-size: 18px; font-weight: 800; margin-top: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+
 @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
 @media (max-width: 768px) { .header-top { flex-wrap: wrap; gap: 16px; } .nav-tabs { overflow-x: auto; justify-content: flex-start; padding: 0 16px; } .opsi-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -340,7 +372,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     
     <?php if($page !== 'kerjakan_quiz'): ?>
     <div class="header-icons">
-      <!-- TOMBOL LONCENG PINDAH KE HALAMAN NOTIFIKASI KHUSUS -->
       <a href="murid.php?page=notif" class="notif-btn" title="Pemberitahuan">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <?php if($jml_notif > 0): ?><span class="notif-badge"><?= $jml_notif ?></span><?php endif; ?>
@@ -376,7 +407,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
   ?>
       <div class="card" style="border-left:4px solid var(--sage-500)">
           <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Manajemen & Kode Gabung Kelas</h2>
-          <p style="font-size:13px;color:var(--sage-600);margin-bottom:16px">Masukkan kode kelas dari guru untuk bergabung.</p>
+          <p style="font-size:13px;color:var(--sage-600);margin-bottom:16px">Masukkan kode kelas dari guru untuk mengajukan bergabung.</p>
           <form method="POST" id="form-gabung-kelas" style="display:flex;gap:12px;flex-wrap:wrap">
               <input type="text" id="kode-gabung-input" name="kode_gabung" class="form-control" placeholder="Masukkan kode kelas, contoh KLS-XXX" required style="flex:1;min-width:200px;text-transform:uppercase">
               <button type="submit" name="gabung_kelas" class="btn-yellow">Gabung Kelas</button>
@@ -394,10 +425,12 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 
       <h3 style="font-size:18px;margin:30px 0 16px;font-weight:800;color:var(--sage-800);display:flex;align-items:center;gap:10px;"><span style="display:block;width:8px;height:24px;background:var(--sage-500);border-radius:4px;"></span> Daftar Kelas Saya</h3>
       <?php if (empty($daftar_kelas)): ?>
-          <div style="padding:40px 20px;background:#fff;border:1px dashed var(--sage-300);border-radius:var(--radius-lg);text-align:center;font-size:14px;color:var(--sage-600)">Belum bergabung ke kelas mana pun.</div>
+          <div style="padding:40px 20px;background:#fff;border:1px dashed var(--sage-300);border-radius:var(--radius-lg);text-align:center;font-size:14px;color:var(--sage-600)">Belum ada pengajuan atau kelas yang diikuti.</div>
       <?php else: ?>
           <div class="class-grid">
-              <?php foreach ($daftar_kelas as $kls): ?>
+              <?php foreach ($daftar_kelas as $kls): 
+                  $status_izin = $kls['status_izin'] ?? 'disetujui';
+              ?>
               <article class="class-card">
                   <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px;">
                       <div style="width:48px;height:48px;background:var(--sage-50);border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--sage-600); border: 1px solid var(--sage-100);">
@@ -408,8 +441,28 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                           <p style="font-size:12.5px;color:var(--sage-600);font-weight:600;">Guru: <?= e($kls['nama_guru'] ?? 'Guru Pengampu') ?></p>
                       </div>
                   </div>
-                  <div style="background:var(--nav-yellow);border:1px dashed #E2D38A;padding:8px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:700;display:inline-block;color:var(--sage-800);font-family:monospace; margin-bottom:14px;">Kode: <?= e($kls['kode_gabung']) ?></div>
-                  <div><a href="murid.php?page=detail_kelas&id=<?= (int)$kls['id'] ?>" class="btn-yellow" style="width:100%; font-size:12px; padding:10px;">Buka Ruang Kelas</a></div>
+                  
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                      <div style="background:var(--nav-yellow);border:1px dashed #E2D38A;padding:6px 12px;border-radius:var(--radius-sm);font-size:12px;font-weight:700;color:var(--sage-800);font-family:monospace;">Kode: <?= e($kls['kode_gabung']) ?></div>
+                      
+                      <?php if($status_izin === 'disetujui'): ?>
+                          <span style="font-size:11px; font-weight:800; background:#E8F5E9; color:#2E7D32; padding:4px 10px; border-radius:50px; border:1px solid #C8E6C9;">Tergabung</span>
+                      <?php elseif($status_izin === 'pending'): ?>
+                          <span style="font-size:11px; font-weight:800; background:#FFF3CD; color:#856404; padding:4px 10px; border-radius:50px; border:1px solid #FFEEBA;">⏳ Menunggu Izin</span>
+                      <?php else: ?>
+                          <span style="font-size:11px; font-weight:800; background:#FFEBEE; color:#C62828; padding:4px 10px; border-radius:50px; border:1px solid #FFCDD2;">❌ Ditolak</span>
+                      <?php endif; ?>
+                  </div>
+
+                  <div>
+                      <?php if($status_izin === 'disetujui'): ?>
+                          <a href="murid.php?page=detail_kelas&id=<?= (int)$kls['id'] ?>" class="btn-yellow" style="width:100%; font-size:12px; padding:10px;">Buka Ruang Kelas</a>
+                      <?php elseif($status_izin === 'pending'): ?>
+                          <a href="murid.php?page=detail_kelas&id=<?= (int)$kls['id'] ?>" class="btn-yellow" style="width:100%; font-size:12px; padding:10px; background:#E2D38A; color:var(--sage-900);">Sedang Menunggu Izin</a>
+                      <?php else: ?>
+                          <a href="murid.php?page=detail_kelas&id=<?= (int)$kls['id'] ?>" class="btn-yellow" style="width:100%; font-size:12px; padding:10px; background:#F4E3E0; color:#C62828; box-shadow:none;">Lihat Status</a>
+                      <?php endif; ?>
+                  </div>
               </article>
               <?php endforeach; ?>
           </div>
@@ -419,14 +472,74 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       break; 
       case 'detail_kelas':
           $kid = (int)($_GET['id'] ?? 0);
-          $s = mysqli_prepare($koneksi, "SELECT k.*, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru FROM kelas k JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE k.id=? AND ak.user_id=? LIMIT 1");
+          $s = mysqli_prepare($koneksi, "SELECT k.*, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru, COALESCE(ak.status, 'disetujui') AS status_izin FROM kelas k JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE k.id=? AND ak.user_id=? LIMIT 1");
           mysqli_stmt_bind_param($s, 'ii', $kid, $uid); mysqli_stmt_execute($s);
           $kelas_detail = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
   ?>
       <a href="murid.php?page=kelas" class="btn-yellow" style="background:#fff; color:var(--sage-800); border:1px solid var(--sage-100); margin-bottom:16px; box-shadow:none;">&larr; Kembali ke Daftar Kelas</a>
+      
       <?php if(!$kelas_detail): ?>
-          <div class="card"><p style="color:red">Kelas tidak ditemukan atau Anda tidak memiliki akses ke kelas ini.</p></div>
+          <div class="card"><p style="color:red">Kelas tidak ditemukan atau Anda belum berinisiatif mengajukan masuk ke kelas ini.</p></div>
+      
+      <?php elseif($kelas_detail['status_izin'] === 'pending'): ?>
+          <!-- LANDING PAGE: SEDANG MENUNGGU IZIN GURU -->
+          <div class="card" style="max-width:700px; margin:20px auto; text-align:center; padding:50px 30px; background: linear-gradient(135deg, #FFFDF6 0%, #FFFFFF 100%); border:2px dashed var(--nav-yellow-dark);">
+              <div style="width:90px; height:90px; border-radius:50%; background:var(--nav-yellow); color:var(--sage-800); display:flex; align-items:center; justify-content:center; font-size:42px; margin:0 auto 24px auto; animation: pulse 2s infinite; box-shadow:0 8px 24px rgba(242, 231, 181, 0.6);">
+                  ⏳
+              </div>
+              <span style="background:#FFF3CD; color:#856404; font-size:12px; font-weight:800; padding:6px 16px; border-radius:50px; text-transform:uppercase; letter-spacing:0.5px;">Permintaan Terkirim</span>
+              <h2 style="font-size:26px; font-weight:900; color:var(--sage-900); margin:16px 0 8px;">Sedang Menunggu Izin Guru</h2>
+              <p style="font-size:14.5px; color:var(--sage-600); max-width:520px; margin:0 auto 28px; line-height:1.6;">
+                  Permintaan kamu untuk bergabung ke kelas <strong><?= e($kelas_detail['nama_kelas']) ?></strong> sudah diterima oleh sistem. Guru pengampu belum memberikan persetujuan izin masuk.
+              </p>
+
+              <div style="background:#FAFCFA; border:1px solid var(--sage-100); border-radius:var(--radius-md); padding:20px 24px; text-align:left; max-width:480px; margin:0 auto 28px;">
+                  <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:13.5px;">
+                      <span style="color:var(--sage-600); font-weight:600;">Nama Kelas:</span>
+                      <strong style="color:var(--sage-900);"><?= e($kelas_detail['nama_kelas']) ?></strong>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:13.5px;">
+                      <span style="color:var(--sage-600); font-weight:600;">Guru Pengampu:</span>
+                      <strong style="color:var(--sage-900);"><?= e($kelas_detail['nama_guru'] ?? 'Guru Pengampu') ?></strong>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; font-size:13.5px;">
+                      <span style="color:var(--sage-600); font-weight:600;">Kode Gabung:</span>
+                      <strong style="font-family:monospace; color:var(--sage-800); background:var(--nav-yellow); padding:2px 8px; border-radius:4px;"><?= e($kelas_detail['kode_gabung']) ?></strong>
+                  </div>
+              </div>
+
+              <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap;">
+                  <button onclick="window.location.reload();" class="btn-yellow" style="padding:12px 24px; font-size:13px;">
+                      🔄 Cek Status Persetujuan
+                  </button>
+                  <a href="murid.php?page=kelas" class="btn-yellow" style="background:#fff; color:var(--sage-800); border:1px solid var(--sage-100); padding:12px 24px; font-size:13px; box-shadow:none;">
+                      &larr; Kembali ke Daftar Kelas
+                  </a>
+              </div>
+          </div>
+
+          <script>
+          // Auto-refresh setiap 7 detik untuk mengecek apakah guru sudah menyetujui
+          setTimeout(function() {
+              window.location.reload();
+          }, 7000);
+          </script>
+
+      <?php elseif($kelas_detail['status_izin'] === 'ditolak'): ?>
+          <!-- LANDING PAGE: PERMINTAAN DITOLAK -->
+          <div class="card" style="max-width:600px; margin:20px auto; text-align:center; padding:50px 30px;">
+              <div style="width:80px; height:80px; border-radius:50%; background:#FFEBEE; color:#C62828; display:flex; align-items:center; justify-content:center; font-size:38px; margin:0 auto 20px auto;">
+                  ❌
+              </div>
+              <h2 style="font-size:24px; font-weight:900; color:#C62828; margin-bottom:8px;">Permintaan Ditolak</h2>
+              <p style="font-size:14px; color:var(--sage-600); margin-bottom:28px; line-height:1.6;">
+                  Maaf, guru pengampu menolak pengajuan bergabung kamu untuk kelas <strong><?= e($kelas_detail['nama_kelas']) ?></strong>. Silakan hubungi guru yang bersangkutan.
+              </p>
+              <a href="murid.php?page=kelas" class="btn-yellow">Kembali ke Daftar Kelas</a>
+          </div>
+
       <?php else: ?>
+          <!-- RUANG KELAS UTAMA (HANYA DITAMPILKAN JIKA DISETUJUI) -->
           <div class="card" style="background:linear-gradient(135deg,var(--sage-50),#fff)">
               <h2 style="font-size:22px;color:var(--sage-800);margin-bottom:6px"><?= e($kelas_detail['nama_kelas']) ?></h2>
               <p style="font-size:13px;color:var(--sage-600)">Pengajar: <strong><?= e($kelas_detail['nama_guru'] ?? 'Guru Pengampu') ?></strong> • Kode Gabung: <strong><?= e($kelas_detail['kode_gabung']) ?></strong></p>
@@ -475,10 +588,10 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
           </form>
       </div>
 
-  <?php break; case 'notif': case 'notifikasi': // HALAMAN KHUSUS NOTIFIKASI ?>
+  <?php break; case 'notif': case 'notifikasi': ?>
       <div class="card" style="max-width: 800px; margin: 0 auto;">
           <h2 style="font-size:22px; margin-bottom:6px; font-weight:800; color:var(--sage-800);">🔔 Pemberitahuan & Informasi Terbaru</h2>
-          <p style="font-size:13.5px; color:var(--sage-600); margin-bottom:24px;">Berikut adalah riwayat tugas dan kuis terbaru dari kelas yang Anda ikuti.</p>
+          <p style="font-size:13.5px; color:var(--sage-600); margin-bottom:24px;">Berikut adalah riwayat tugas dan kuis terbaru dari kelas yang telah disetujui.</p>
           
           <?php if(empty($notifikasi_list)): ?>
               <div style="padding:40px; text-align:center; font-size:14px; color:var(--sage-600); border:1px dashed var(--sage-300); border-radius:var(--radius-md);">Belum ada pemberitahuan baru.</div>
@@ -504,11 +617,13 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
           <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Absensi Kehadiran Murid</h2>
           <?php 
           $daftar_absen = []; 
-          $q = mysqli_query($koneksi, "SELECT a.id, a.judul_absensi, a.tanggal, k.nama_kelas AS kelas, ah.status FROM absensi a JOIN kelas k ON k.id=a.kelas_id LEFT JOIN absensi_hadir ah ON ah.absensi_id=a.id AND ah.user_id=$uid WHERE a.kelas_id IN ($in_kelas) ORDER BY a.tanggal DESC LIMIT 10");
-          while($q && $r=mysqli_fetch_assoc($q)) $daftar_absen[] = $r;
+          if ($in_kelas !== '0') {
+              $q = mysqli_query($koneksi, "SELECT a.id, a.judul_absensi, a.tanggal, k.nama_kelas AS kelas, ah.status FROM absensi a JOIN kelas k ON k.id=a.kelas_id LEFT JOIN absensi_hadir ah ON ah.absensi_id=a.id AND ah.user_id=$uid WHERE a.kelas_id IN ($in_kelas) ORDER BY a.tanggal DESC LIMIT 10");
+              while($q && $r=mysqli_fetch_assoc($q)) $daftar_absen[] = $r;
+          }
           
           if(empty($daftar_absen)): ?>
-              <div style="padding:40px 20px;text-align:center;font-size:14px;color:var(--sage-600);border:1px dashed var(--sage-300);border-radius:var(--radius-lg);margin-top:20px;">Belum ada sesi absensi aktif.</div>
+              <div style="padding:40px 20px;text-align:center;font-size:14px;color:var(--sage-600);border:1px dashed var(--sage-300);border-radius:var(--radius-lg);margin-top:20px;">Belum ada sesi absensi aktif dari kelas yang kamu ikuti.</div>
           <?php else: foreach($daftar_absen as $ab): ?>
               <div style="background:#FAFCFA;padding:20px 24px;border-radius:var(--radius-md);margin-top:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;border:1px solid var(--sage-100);">
                   <div><strong style="font-size:16px;color:var(--sage-800);margin-bottom:4px;display:block;"><?= e($ab['judul_absensi']) ?></strong><div style="font-size:13px;color:var(--sage-600);font-weight:600;">📍 <?= e($ab['kelas']) ?> &bull; 📅 <?= e(tanggal_id($ab['tanggal'], false)) ?></div></div>
@@ -565,11 +680,13 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
               <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Daftar Tugas Murid</h2>
               <?php
               $daftar_tugas = []; 
-              $q = mysqli_query($koneksi, "SELECT t.id, t.judul_tugas AS judul, t.deadline, k.nama_kelas AS mapel, pt.nama_file FROM tugas t JOIN kelas k ON k.id=t.kelas_id LEFT JOIN pengumpulan_tugas pt ON pt.tugas_id=t.id AND pt.user_id=$uid WHERE t.kelas_id IN ($in_kelas) ORDER BY t.deadline ASC LIMIT 10");
-              while($q && $r=mysqli_fetch_assoc($q)) $daftar_tugas[] = $r;
+              if ($in_kelas !== '0') {
+                  $q = mysqli_query($koneksi, "SELECT t.id, t.judul_tugas AS judul, t.deadline, k.nama_kelas AS mapel, pt.nama_file FROM tugas t JOIN kelas k ON k.id=t.kelas_id LEFT JOIN pengumpulan_tugas pt ON pt.tugas_id=t.id AND pt.user_id=$uid WHERE t.kelas_id IN ($in_kelas) ORDER BY t.deadline ASC LIMIT 10");
+                  while($q && $r=mysqli_fetch_assoc($q)) $daftar_tugas[] = $r;
+              }
               
               if(empty($daftar_tugas)): ?>
-                  <div style="padding:40px 20px;text-align:center;font-size:14px;color:var(--sage-600);border:1px dashed var(--sage-300);border-radius:var(--radius-lg);margin-top:20px;">Belum ada tugas tersedia.</div>
+                  <div style="padding:40px 20px;text-align:center;font-size:14px;color:var(--sage-600);border:1px dashed var(--sage-300);border-radius:var(--radius-lg);margin-top:20px;">Belum ada tugas tersedia dari kelas yang kamu ikuti.</div>
               <?php else: foreach($daftar_tugas as $t): ?>
                   <div style="background:#FAFCFA;padding:20px 24px;border-radius:var(--radius-md);margin-top:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;border:1px solid var(--sage-100);">
                       <div><strong style="font-size:16px;color:var(--sage-800);margin-bottom:4px;display:block;">📄 <?= e($t['judul']) ?></strong><div style="font-size:13px;color:var(--sage-600);font-weight:600;">📍 <?= e($t['mapel']) ?> &bull; ⏳ Deadline: <?= $t['deadline'] ? e(tanggal_id($t['deadline'])) : 'Tanpa Batas' ?></div></div>
@@ -618,9 +735,9 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
   <?php break; case 'kerjakan_quiz': ?>
       <?php
       if ($quiz_id_get <= 0) { echo "<p>Kuis tidak valid.</p>"; break; }
-      $q_info = mysqli_query($koneksi, "SELECT q.*, k.nama_kelas FROM quiz q JOIN kelas k ON q.kelas_id=k.id WHERE q.id=$quiz_id_get LIMIT 1");
+      $q_info = mysqli_query($koneksi, "SELECT q.*, k.nama_kelas FROM quiz q JOIN kelas k ON q.kelas_id=k.id JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE q.id=$quiz_id_get AND ak.user_id=$uid AND COALESCE(ak.status, 'disetujui')='disetujui' LIMIT 1");
       $kuis = $q_info ? mysqli_fetch_assoc($q_info) : null;
-      if (!$kuis) { echo "<p>Kuis tidak ditemukan.</p>"; break; }
+      if (!$kuis) { echo "<div class='card quiz-container'><p style='color:red;'>Kuis tidak ditemukan atau Anda belum diizinkan masuk ke kelas ini.</p></div>"; break; }
 
       $q_hasil = mysqli_query($koneksi, "SELECT skor FROM quiz_hasil WHERE quiz_id=$quiz_id_get AND user_id=$uid");
       if (mysqli_num_rows($q_hasil) > 0) {
@@ -843,7 +960,6 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                 const url = new URL(isiQR, window.location.href);
                 kode = url.searchParams.get('gabung') || url.searchParams.get('kode_gabung') || '';
             } catch (e) {}
-            // Mendukung QR berisi link gabung atau kode kelas saja.
             if (!kode && !/^https?:\/\//i.test(isiQR) && !isiQR.includes('://')) kode = isiQR;
             kode = kode.trim().toUpperCase();
             if (!kode || kode.length > 100 || /[\s<>"']/.test(kode)) {
@@ -851,7 +967,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                 return;
             }
             codeInput.value = kode;
-            statusBox.textContent = 'Kode terbaca: ' + kode + '. Sedang menggabungkan ke kelas...';
+            statusBox.textContent = 'Kode terbaca: ' + kode + '. Sedang mengirim pengajuan ke guru...';
             form.requestSubmit();
         } catch (error) {
             statusBox.textContent = 'Gagal membaca gambar QR. Coba gambar lain.';
