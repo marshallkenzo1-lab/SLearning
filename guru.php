@@ -1,5 +1,5 @@
 <?php
-// SLearning — Dashboard Guru (Persetujuan Izin Kelas, Manajemen Anggota, & Penilaian UTUH)
+// SLearning — Dashboard Guru (Persetujuan Izin Kelas, Manajemen Anggota, Penilaian UTUH, Profil & Report Murid)
 session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
@@ -19,6 +19,18 @@ if ($cekStatusAK && mysqli_num_rows($cekStatusAK) === 0) {
 $cekGambarSoal = @mysqli_query($koneksi, "SHOW COLUMNS FROM quiz_soal LIKE 'gambar'");
 if ($cekGambarSoal && mysqli_num_rows($cekGambarSoal) === 0) {
     @mysqli_query($koneksi, "ALTER TABLE quiz_soal ADD COLUMN gambar VARCHAR(255) NULL");
+}
+
+// Auto-migration untuk fitur report murid
+$cekTabelReport = @mysqli_query($koneksi, "SHOW TABLES LIKE 'report_murid'");
+if ($cekTabelReport && mysqli_num_rows($cekTabelReport) === 0) {
+    @mysqli_query($koneksi, "CREATE TABLE report_murid (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        guru_id INT NOT NULL,
+        murid_id INT NOT NULL,
+        alasan TEXT NOT NULL,
+        tanggal TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )");
 }
 
 function uploadGambarSoal($field = 'gambar_soal') {
@@ -189,6 +201,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         header("Location: guru.php?page=detail_kelas&id=".$detail_kelas_id."&tab=".$tab_redirect); exit;
     }
 
+    // AKSI REPORT MURID
+    if ($aksi === 'report_murid') {
+        $murid_id = (int)($_POST['murid_id'] ?? 0);
+        $alasan = trim($_POST['alasan'] ?? '');
+        $kelas_id = (int)($_POST['kelas_id'] ?? 0); 
+
+        if ($murid_id > 0 && $alasan !== '') {
+            $stmt = mysqli_prepare($koneksi, "INSERT INTO report_murid (guru_id, murid_id, alasan) VALUES (?, ?, ?)");
+            mysqli_stmt_bind_param($stmt, "iis", $user_id, $murid_id, $alasan);
+            if (mysqli_stmt_execute($stmt)) {
+                flash_set('Murid berhasil dilaporkan.');
+            } else {
+                flash_set('Gagal melaporkan murid.', 'error');
+            }
+            mysqli_stmt_close($stmt);
+        } else {
+            flash_set('Alasan report tidak boleh kosong.', 'error');
+        }
+        header("Location: guru.php?page=profil_murid&id=" . $murid_id . "&kelas_id=" . $kelas_id); 
+        exit;
+    }
+
     // AKSI TAMBAH KELAS DENGAN VALIDASI
     if ($aksi === 'tambah_kelas') {
         $nama = trim($_POST['nama_kelas_baru'] ?? '');
@@ -339,7 +373,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
     if ($aksi === 'buat_absen') {
         $kelas_id = (int)($_POST['kelas_id'] ?? 0);
         $tanggal = $_POST['tanggal'] ?? date('Y-m-d');
-        $judul = trim($_POST['judul_absensi'] ?? '') ?: ('Absensi — '.$tanggal);
+        // Memastikan judul absensi wajib HURUF KAPITAL SEMUA (Uppercase)
+        $judul = strtoupper(trim($_POST['judul_absensi'] ?? '')) ?: strtoupper('ABSENSI — '.$tanggal);
         if ($kelas_id > 0) {
             $s = mysqli_prepare($koneksi, "INSERT INTO absensi (guru_id, kelas_id, judul_absensi, tanggal) VALUES (?,?,?,?)");
             mysqli_stmt_bind_param($s, "iiss", $user_id, $kelas_id, $judul, $tanggal);
@@ -620,6 +655,114 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .badge-merah { background: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2; }
 .form-penilaian-inline { display: flex; gap: 8px; align-items: center; background: #FAFCFA; padding: 12px; border-radius: 12px; border: 1px solid var(--sage-100); }
 
+/* ================= TAMBAHAN CSS NAV DROPDOWN & MODAL PANDUAN ================= */
+.dropdown { position: relative; }
+.dropdown-content {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 55px;
+    background-color: #FFFFFF;
+    min-width: 180px;
+    box-shadow: var(--shadow-md);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--sage-100);
+    z-index: 100;
+    overflow: hidden;
+}
+.dropdown-content a {
+    color: var(--sage-800);
+    padding: 14px 18px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--sage-50);
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+}
+.dropdown-content a:last-child { border-bottom: none; }
+.dropdown-content a:hover {
+    background-color: var(--sage-50);
+    transform: none;
+    border-color: var(--sage-50);
+}
+.dropdown-content .badge-notif {
+    background: #E07A5F;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+}
+.show-dropdown { display: block; }
+
+/* Modal Panduan Styles */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(29, 38, 29, 0.6);
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+.modal-content {
+    background-color: #fff;
+    padding: 30px;
+    border-radius: var(--radius-md);
+    max-width: 500px;
+    width: 90%;
+    box-shadow: var(--shadow-lg);
+    animation: modalFadeIn 0.3s ease-out;
+}
+@keyframes modalFadeIn {
+    from { transform: translateY(-20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 2px dashed var(--sage-100);
+    padding-bottom: 16px;
+}
+.modal-header h3 { color: var(--sage-900); font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.close-btn {
+    background: var(--sage-50);
+    border: none;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--sage-800);
+    display: flex; align-items: center; justify-content: center;
+    transition: 0.2s;
+}
+.close-btn:hover { background: #E07A5F; color: #fff; }
+.modal-body ul { list-style: none; padding-left: 0; }
+.modal-body li {
+    margin-bottom: 14px;
+    font-size: 13.5px;
+    color: var(--sage-600);
+    line-height: 1.6;
+    padding-left: 28px;
+    position: relative;
+}
+.modal-body li::before {
+    content: '✅';
+    position: absolute;
+    left: 0;
+    font-size: 14px;
+    top: 2px;
+}
+.modal-body li strong { color: var(--sage-900); font-weight: 800; }
+
 @media (max-width: 768px) {
     .header-top { flex-wrap: wrap; gap: 16px; }
     .nav-tabs { overflow-x: auto; justify-content: flex-start; padding: 0 16px; }
@@ -639,16 +782,27 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     </a>
     
     <div class="header-icons">
-      <a href="#" title="Notifikasi">
-        <?php if(!empty($notif_tugas_belum_dinilai)): ?><div class="notif-dot"></div><?php endif; ?>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <!-- Tombol Buku Panduan -->
+      <a href="#" onclick="bukaPanduan(event)" title="Buku Panduan Penggunaan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
       </a>
-      <a href="guru.php?page=profil" title="Profil">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      </a>
-      <a href="logout.php" onclick="return confirm('Keluar dari Slearning?')" title="Keluar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      </a>
+
+      <!-- Menu 3 Titik (Kebab Menu) -->
+      <div class="dropdown">
+        <a href="#" onclick="toggleDropdown(event)" title="Menu Lanjutan">
+          <?php if(!empty($notif_tugas_belum_dinilai)): ?><div class="notif-dot"></div><?php endif; ?>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </a>
+        
+        <div id="menuLanjutan" class="dropdown-content">
+          <a href="#">
+            Notifikasi 
+            <?php if(!empty($notif_tugas_belum_dinilai)): ?><span class="badge-notif">Baru</span><?php endif; ?>
+          </a>
+          <a href="guru.php?page=profil">Pengaturan Profil</a>
+          <a href="logout.php" onclick="return confirm('Apakah Anda yakin ingin keluar dari Slearning?')" style="color: #E07A5F;">Keluar Akun</a>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -929,7 +1083,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <?php if ($tab === 'murid'): ?>
           <?php
           $q_murid = mysqli_query($koneksi, "
-              SELECT ak.id AS ak_id, l.nama, l.email 
+              SELECT ak.id AS ak_id, l.id AS user_id, l.nama, l.email 
               FROM anggota_kelas ak 
               JOIN login l ON ak.user_id = l.id 
               WHERE ak.kelas_id = $detail_kelas_id AND COALESCE(ak.status, 'disetujui') = 'disetujui' 
@@ -950,11 +1104,15 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                               <strong style="font-size: 14.5px; color: var(--sage-900); display:block; margin-bottom:4px;"><?= e($m['nama']) ?></strong>
                               <span style="font-size: 13px; color: var(--sage-600);"><?= e($m['email']) ?></span>
                           </div>
-                          <form action="guru.php?page=detail_kelas&id=<?= $detail_kelas_id ?>" method="POST" onsubmit="return confirm('Keluarkan murid ini dari kelas?');">
-                              <input type="hidden" name="aksi" value="keluarkan_murid">
-                              <input type="hidden" name="ak_id" value="<?= $m['ak_id'] ?>">
-                              <button type="submit" class="btn-hapus" style="padding: 8px 14px; font-size:12px;">Keluarkan</button>
-                          </form>
+                          <div style="display:flex; gap:8px;">
+                              <a href="guru.php?page=profil_murid&id=<?= $m['user_id'] ?>&kelas_id=<?= $detail_kelas_id ?>" class="btn-primary" style="padding: 8px 14px; font-size:12px; background:var(--sage-500); text-decoration:none; box-shadow:none;">Lihat Profil</a>
+                              
+                              <form action="guru.php?page=detail_kelas&id=<?= $detail_kelas_id ?>" method="POST" onsubmit="return confirm('Keluarkan murid ini dari kelas?');">
+                                  <input type="hidden" name="aksi" value="keluarkan_murid">
+                                  <input type="hidden" name="ak_id" value="<?= $m['ak_id'] ?>">
+                                  <button type="submit" class="btn-hapus" style="padding: 8px 14px; font-size:12px;">Keluarkan</button>
+                              </form>
+                          </div>
                       </li>
                   <?php endwhile; endif; ?>
               </ul>
@@ -1131,18 +1289,77 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     <?php endif; ?>
 
 
+  <!-- ================= HALAMAN PROFIL MURID ================= -->
+  <?php elseif ($page === 'profil_murid'): ?>
+    <?php
+      $murid_id = (int)($_GET['id'] ?? 0);
+      $kelas_back_id = (int)($_GET['kelas_id'] ?? 0);
+      $qm = mysqli_query($koneksi, "SELECT id, nama, email, username FROM login WHERE id = $murid_id AND jenis = 'murid' LIMIT 1");
+      $data_murid = $qm ? mysqli_fetch_assoc($qm) : null;
+    ?>
+    
+    <?php if (!$data_murid): ?>
+      <div class="empty-state"><p>Data murid tidak ditemukan.</p></div>
+    <?php else: ?>
+      <div class="card-manage">
+        <a href="guru.php?page=detail_kelas&id=<?= $kelas_back_id ?>&tab=murid" style="display:inline-flex; align-items:center; gap:6px; color:var(--sage-600); text-decoration:none; font-weight:700; font-size:13px; margin-bottom:12px;">← Kembali ke Daftar Murid</a>
+        <h2>Profil Murid: <?= e($data_murid['nama']) ?></h2>
+        <p style="margin-top: 8px;"><strong>Email:</strong> <?= e($data_murid['email']) ?></p>
+        <p style="margin-top: 4px;"><strong>Username:</strong> <?= e($data_murid['username']) ?></p>
+      </div>
+
+      <div class="card-manage" style="margin-top: 24px; border-color: #FFCDD2; background: #FFF9F9;">
+        <h3 class="section-title" style="color: #C62828; margin-bottom: 12px;">Report Murid</h3>
+        <p style="font-size: 13px; color: var(--sage-600); margin-bottom: 20px;">Gunakan formulir ini untuk melaporkan pelanggaran, perilaku, atau memberikan catatan khusus terkait murid ini.</p>
+        
+        <form action="guru.php" method="POST">
+          <input type="hidden" name="aksi" value="report_murid">
+          <input type="hidden" name="murid_id" value="<?= $murid_id ?>">
+          <input type="hidden" name="kelas_id" value="<?= $kelas_back_id ?>">
+          
+          <div style="margin-bottom: 16px;">
+            <label class="form-label" style="color: #C62828;">Alasan Pelaporan / Catatan Khusus</label>
+            <textarea name="alasan" class="input-elegant" style="min-height: 100px; resize: vertical; border-color: #FFCDD2;" required placeholder="Jelaskan alasan pelaporan secara detail..."></textarea>
+          </div>
+          
+          <button type="submit" class="btn-primary" style="background: #C62828;" onclick="return confirm('Apakah Anda yakin ingin melaporkan murid ini?');">Kirim Report</button>
+        </form>
+      </div>
+
+      <?php
+      // Tampilkan Riwayat Report jika ada
+      $qr = mysqli_query($koneksi, "SELECT * FROM report_murid WHERE murid_id = $murid_id AND guru_id = $user_id ORDER BY tanggal DESC");
+      if ($qr && mysqli_num_rows($qr) > 0):
+      ?>
+      <h3 class="section-title" style="margin-top: 32px;">Riwayat Report Anda untuk Murid Ini</h3>
+      <div style="display:grid; gap:14px;">
+          <?php while ($rep = mysqli_fetch_assoc($qr)): ?>
+          <div style="background:#FFF3F0; border:1px solid #FFCDD2; border-radius:12px; padding:16px;">
+              <p style="font-size:12px; color:#C62828; margin-bottom:6px;">
+                <strong>Dilaporkan pada:</strong> <?= date('d M Y, H:i', strtotime($rep['tanggal'])) ?>
+              </p>
+              <p style="font-size:14px; color:var(--sage-900); line-height: 1.5;"><?= nl2br(e($rep['alasan'])) ?></p>
+          </div>
+          <?php endwhile; ?>
+      </div>
+      <?php endif; ?>
+      
+    <?php endif; ?>
+
+
   <!-- ================= HALAMAN ABSENSI ================= -->
   <?php elseif ($page === 'absensi'): ?>
     <div class="card-manage">
       <h2>Buka Sesi Absensi</h2>
-      <p>Catat kehadiran siswa berdasarkan kelas dan tanggal pertemuan hari ini atau mendatang.</p>
+      <p>Catat kehadiran siswa berdasarkan kelas dan tanggal pertemuan hari ini atau mendatang (Judul otomatis dikonversi menjadi huruf kapital seluruhnya).</p>
       
       <form action="guru.php?page=absensi" method="POST" style="margin-top: 24px;">
         <input type="hidden" name="aksi" value="buat_absen">
         <div class="form-grid">
           <div>
             <label class="form-label">Judul Sesi Absensi</label>
-            <input type="text" name="judul_absensi" class="input-elegant" placeholder="Contoh: Pertemuan 1 - Jaringan Dasar" required>
+            <!-- Atribut style text-transform: uppercase untuk memaksa tampilan huruf kapital di browser -->
+            <input type="text" name="judul_absensi" class="input-elegant" placeholder="CONTOH: PERTEMUAN 1 - JARINGAN DASAR" style="text-transform: uppercase;" required>
           </div>
           <div>
             <label class="form-label">Pilih Kelas</label>
@@ -1420,8 +1637,64 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     </div>
   <?php endif; ?>
 
+  <!-- ================= MODAL BUKU PANDUAN ================= -->
+  <div id="modalPanduan" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          Buku Panduan Cepat
+        </h3>
+        <button onclick="tutupPanduan()" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <ul>
+          <li><strong>Beranda:</strong> Halaman utama berisi ringkasan akses pintar, pemantauan murid, dan tugas yang harus segera dinilai.</li>
+          <li><strong>Kelas:</strong> Tempat untuk membuat ruang kelas, membagikan kode gabung, serta menerima atau menolak murid yang masuk.</li>
+          <li><strong>Absensi:</strong> Fitur untuk mencatat daftar hadir siswa pada hari dan kelas tertentu.</li>
+          <li><strong>Rekap:</strong> Fitur otomatis untuk mencetak riwayat absensi dalam bentuk data file Excel (XLSX) / CSV.</li>
+          <li><strong>Tugas:</strong> Panel untuk membagikan tugas ke murid beserta tenggat waktu (deadline), dan memberikan nilai/feedback.</li>
+          <li><strong>Quiz:</strong> Membuat soal pilihan ganda interaktif, memasukkan gambar, dan memantau hasil nilai akhir siswa.</li>
+          <li><strong>Menu Titik Tiga (⋮):</strong> Klik ikon ini untuk melihat Pemberitahuan baru, mengatur Profil, atau untuk Keluar (Logout).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
 </main>
 <script>
+// Logika untuk Dropdown Titik 3
+function toggleDropdown(e) {
+    e.preventDefault();
+    document.getElementById("menuLanjutan").classList.toggle("show-dropdown");
+}
+
+// Logika untuk Buku Panduan
+function bukaPanduan(e) {
+    e.preventDefault();
+    document.getElementById('modalPanduan').style.display = 'flex';
+}
+function tutupPanduan() {
+    document.getElementById('modalPanduan').style.display = 'none';
+}
+
+// Menutup dropdown atau modal saat klik di luar area
+window.addEventListener('click', function(e) {
+    // Tutup dropdown jika klik diluar
+    if (!e.target.closest('.dropdown')) {
+        let dropdown = document.getElementById("menuLanjutan");
+        if (dropdown && dropdown.classList.contains('show-dropdown')) {
+            dropdown.classList.remove('show-dropdown');
+        }
+    }
+    // Tutup modal panduan jika area luar modal di klik
+    let modal = document.getElementById('modalPanduan');
+    if (e.target === modal) {
+        tutupPanduan();
+    }
+});
+
+// Fungsi bawaan (salin link)
 function salinLinkKelas(link, tombol) {
   const selesai = () => {
     const teksLama = tombol.innerHTML;

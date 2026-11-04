@@ -1,5 +1,5 @@
 <?php
-// SLearning — Dashboard Murid (FULL VERSION - Landing Page "Sedang Menunggu Izin" & Approval System)
+// SLearning — Dashboard Murid (FULL VERSION - Landing Page "Sedang Menunggu Izin", Approval System & Fitur Report)
 session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
@@ -28,6 +28,20 @@ $cekStatusAK = @mysqli_query($koneksi, "SHOW COLUMNS FROM anggota_kelas LIKE 'st
 if ($cekStatusAK && mysqli_num_rows($cekStatusAK) === 0) {
     @mysqli_query($koneksi, "ALTER TABLE anggota_kelas ADD COLUMN status ENUM('pending','disetujui','ditolak') NOT NULL DEFAULT 'pending'");
     @mysqli_query($koneksi, "UPDATE anggota_kelas SET status='disetujui' WHERE status IS NULL OR status=''");
+}
+
+// AUTO-MIGRATION DATABASE: Buat tabel laporan_pengguna untuk menampung report dari murid & guru
+$cekLaporan = @mysqli_query($koneksi, "SHOW TABLES LIKE 'laporan_pengguna'");
+if ($cekLaporan && mysqli_num_rows($cekLaporan) === 0) {
+    @mysqli_query($koneksi, "CREATE TABLE laporan_pengguna (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        pelapor_id INT NOT NULL,
+        terlapor_id INT NOT NULL,
+        kategori VARCHAR(100) NOT NULL,
+        deskripsi TEXT,
+        status ENUM('pending','diproses','selesai') NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )");
 }
 
 function set_flash_notification($pesan, $tipe = 'success', $judul = 'Berhasil!') {
@@ -268,6 +282,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_quiz_hasil']))
     header('Location: murid.php?page=quiz'); exit;
 }
 
+// 6. Proses Kirim Laporan Pengguna (Guru / Murid)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kirim_laporan'])) {
+    $terlapor_id = (int)$_POST['terlapor_id'];
+    $kategori = trim($_POST['kategori']);
+    $deskripsi = trim($_POST['deskripsi']);
+
+    if ($terlapor_id === $uid) {
+        set_flash_notification('Kamu tidak bisa melaporkan dirimu sendiri.', 'error', 'Aksi Ditolak');
+    } else {
+        $ins = mysqli_prepare($koneksi, "INSERT INTO laporan_pengguna (pelapor_id, terlapor_id, kategori, deskripsi) VALUES (?, ?, ?, ?)");
+        mysqli_stmt_bind_param($ins, "iiss", $uid, $terlapor_id, $kategori, $deskripsi);
+        if (mysqli_stmt_execute($ins)) {
+            set_flash_notification('Laporan berhasil dikirim dan akan segera diproses.', 'success', 'Terkirim');
+        } else {
+            set_flash_notification('Terjadi kesalahan saat mengirim laporan.', 'error', 'Gagal');
+        }
+        mysqli_stmt_close($ins);
+    }
+    header("Location: murid.php?page=laporan"); exit;
+}
+
 // Data Pendukung Dasbor
 $daftar_kelas = [];
 $s = mysqli_prepare($koneksi, "SELECT k.id, k.nama_kelas, k.kode_gabung, COALESCE(ak.status, 'disetujui') AS status_izin, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id WHERE ak.user_id=? ORDER BY k.id DESC");
@@ -300,7 +335,7 @@ $jml_notif = count($notifikasi_list);
 <link rel="icon" type="image/png" href="assets/img/logo-smkn7.png">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
-:root{--nav-yellow:#FFF8D6;--nav-yellow-dark:#F2E7B5;--sage-body:#F4F7F5;--sage-50:#E8F0E8;--sage-100:#D1E0D1;--sage-500:#6D8C6D;--sage-600:#577357;--sage-800:#2F402F;--sage-900:#1D261D;--radius-sm:12px;--radius-md:16px;--radius-lg:24px; --bg-card: #FFFFFF; --shadow-sm: 0 4px 12px rgba(109, 140, 109, 0.05);}
+:root{--nav-yellow:#FFF8D6;--nav-yellow-dark:#F2E7B5;--sage-body:#F4F7F5;--sage-50:#E8F0E8;--sage-100:#D1E0D1;--sage-500:#6D8C6D;--sage-600:#577357;--sage-800:#2F402F;--sage-900:#1D261D;--radius-sm:12px;--radius-md:16px;--radius-lg:24px; --bg-card: #FFFFFF; --shadow-sm: 0 4px 12px rgba(109, 140, 109, 0.05); --shadow-md: 0 8px 24px rgba(109, 140, 109, 0.08); --shadow-lg: 0 16px 40px rgba(109, 140, 109, 0.12);}
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Plus Jakarta Sans',sans-serif}
 body { background-color: var(--sage-body); color: var(--sage-900); min-height: 100vh; padding-bottom: 60px; position: relative; overflow-x: hidden; }
 body::before { content: ''; position: fixed; top: -10%; left: -5%; width: 50vw; height: 50vw; background: radial-gradient(circle, rgba(255, 248, 214, 0.8) 0%, rgba(255, 248, 214, 0) 70%); border-radius: 50%; pointer-events: none; z-index: -1; }
@@ -310,13 +345,11 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .header-top { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 32px 16px; }
 .logo { display: flex; align-items: center; gap: 12px; text-decoration: none; font-size: 22px; font-weight: 800; color: var(--sage-800); letter-spacing: -0.5px; }
 .logo svg { width: 30px; height: 30px; color: var(--sage-600); }
-.header-icons { display: flex; align-items: center; gap: 16px; }
-.header-icons a, .notif-btn { color: var(--sage-600); transition: all 0.3s ease; position: relative; display: flex; align-items: center; justify-content: center; text-decoration: none; background: #FFFFFF; width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--sage-50); box-shadow: 0 2px 6px rgba(0,0,0,0.02); cursor: pointer; }
-.header-icons a:hover, .notif-btn:hover { color: var(--sage-900); background: var(--sage-50); transform: translateY(-2px); border-color: var(--sage-100); }
+.header-icons { display: flex; align-items: center; gap: 24px; }
+.header-icons a { color: var(--sage-600); transition: all 0.3s ease; position: relative; display: flex; align-items: center; text-decoration: none; background: #FFFFFF; padding: 10px; border-radius: 50%; border: 1px solid var(--sage-50); box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
+.header-icons a:hover { color: var(--sage-900); background: var(--sage-50); transform: translateY(-2px); border-color: var(--sage-100); }
 .header-icons svg { width: 20px; height: 20px; }
-.avatar-header-sm { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; border: 2px solid var(--sage-100); background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12px; }
-
-.notif-badge { position: absolute; top: 2px; right: 2px; background: #E07A5F; color: #fff; font-size: 10px; font-weight: 800; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid #fff; pointer-events: none; }
+.avatar-header-sm { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px; }
 
 .nav-tabs { display: flex; justify-content: center; gap: 8px; max-width: 1200px; margin: 0 auto; padding: 0 32px; }
 .nav-tab { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 28px; text-decoration: none; color: var(--sage-600); font-size: 13px; font-weight: 600; transition: all 0.3s ease; position: relative; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
@@ -355,6 +388,116 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .feedback-overlay p { font-size: 22px; font-weight: 700; background: rgba(0,0,0,0.2); padding: 12px 24px; border-radius: 50px; text-align: center; }
 .feedback-overlay .correct-ans-box { background: #fff; color: #C62828; padding: 12px 24px; border-radius: 12px; font-size: 18px; font-weight: 800; margin-top: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
 
+/* ================= TAMBAHAN CSS NAV DROPDOWN & MODAL PANDUAN ================= */
+.dropdown { position: relative; }
+.dropdown-content {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 55px;
+    background-color: #FFFFFF;
+    min-width: 200px;
+    box-shadow: var(--shadow-md);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--sage-100);
+    z-index: 100;
+    overflow: hidden;
+}
+.dropdown-content a {
+    color: var(--sage-800);
+    padding: 14px 18px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--sage-50);
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    width: 100%;
+    height: auto;
+}
+.dropdown-content a:last-child { border-bottom: none; }
+.dropdown-content a:hover {
+    background-color: var(--sage-50);
+    transform: none;
+    border-color: var(--sage-50);
+}
+.dropdown-content .badge-notif {
+    background: #E07A5F;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+}
+.show-dropdown { display: block; }
+
+/* Modal Panduan Styles */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(29, 38, 29, 0.6);
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+.modal-content {
+    background-color: #fff;
+    padding: 30px;
+    border-radius: var(--radius-md);
+    max-width: 500px;
+    width: 90%;
+    box-shadow: var(--shadow-lg);
+    animation: modalFadeIn 0.3s ease-out;
+}
+@keyframes modalFadeIn {
+    from { transform: translateY(-20px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 2px dashed var(--sage-100);
+    padding-bottom: 16px;
+}
+.modal-header h3 { color: var(--sage-900); font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.close-btn {
+    background: var(--sage-50);
+    border: none;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--sage-800);
+    display: flex; align-items: center; justify-content: center;
+    transition: 0.2s;
+}
+.close-btn:hover { background: #E07A5F; color: #fff; }
+.modal-body ul { list-style: none; padding-left: 0; }
+.modal-body li {
+    margin-bottom: 14px;
+    font-size: 13.5px;
+    color: var(--sage-600);
+    line-height: 1.6;
+    padding-left: 28px;
+    position: relative;
+}
+.modal-body li::before {
+    content: '✅';
+    position: absolute;
+    left: 0;
+    font-size: 14px;
+    top: 2px;
+}
+.modal-body li strong { color: var(--sage-900); font-weight: 800; }
+
 @keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
 @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
@@ -372,18 +515,30 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     
     <?php if($page !== 'kerjakan_quiz'): ?>
     <div class="header-icons">
-      <a href="murid.php?page=notif" class="notif-btn" title="Pemberitahuan">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        <?php if($jml_notif > 0): ?><span class="notif-badge"><?= $jml_notif ?></span><?php endif; ?>
+      <!-- Tombol Buku Panduan -->
+      <a href="#" onclick="bukaPanduan(event)" title="Buku Panduan Penggunaan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
       </a>
 
-      <a href="murid.php?page=profil" title="Profil Saya">
-        <?php if($foto_profil && file_exists($foto_profil)): ?><img src="<?= e($foto_profil) ?>" class="avatar-header-sm">
-        <?php else: ?><div class="avatar-header-sm"><?= strtoupper(substr($nama_murid, 0, 1)) ?></div><?php endif; ?>
-      </a>
-      <a href="logout.php" onclick="return confirm('Keluar dari Slearning?')" title="Keluar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      </a>
+      <!-- Menu 3 Titik (Kebab Menu) -->
+      <div class="dropdown">
+        <a href="#" onclick="toggleDropdown(event)" title="Menu Lanjutan">
+          <?php if($jml_notif > 0): ?>
+            <div style="position:absolute; top:-2px; right:-2px; width:10px; height:10px; background:#E07A5F; border-radius:50%; border:2px solid #fff;"></div>
+          <?php endif; ?>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </a>
+        
+        <div id="menuLanjutan" class="dropdown-content">
+          <a href="murid.php?page=notif">
+            Pemberitahuan 
+            <?php if($jml_notif > 0): ?><span class="badge-notif"><?= $jml_notif ?></span><?php endif; ?>
+          </a>
+          <a href="murid.php?page=profil">Pengaturan Profil</a>
+          <a href="murid.php?page=laporan" style="color: #CD7F32;">🚩 Lapor Pelanggaran</a>
+          <a href="logout.php" onclick="return confirm('Keluar dari Slearning?')" style="color: #E07A5F;">Keluar Akun</a>
+        </div>
+      </div>
     </div>
     <?php endif; ?>
   </div>
@@ -403,8 +558,117 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
   <?php 
   switch($page): 
 
-      case 'kelas': 
+      case 'laporan': 
   ?>
+      <div class="card" style="max-width: 800px; margin: 0 auto;">
+          <h2 style="font-size:22px; margin-bottom:6px; font-weight:800; color:var(--sage-800);">🚩 Lapor Pelanggaran</h2>
+          <p style="font-size:13.5px; color:var(--sage-600); margin-bottom:24px;">Laporkan murid atau guru yang melakukan pelanggaran atau tindakan tidak pantas. Laporan ini bersifat rahasia dan hanya dibaca oleh Admin / Bimbingan Konseling.</p>
+          
+          <form method="POST" action="murid.php?page=laporan" style="background:#FAFCFA; border:1px solid var(--sage-100); padding:24px; border-radius:var(--radius-md); margin-bottom:30px;">
+              <div style="margin-bottom:16px;">
+                  <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px; color:var(--sage-800);">Pilih Pengguna yang Dilaporkan</label>
+                  <select name="terlapor_id" class="form-control" required style="cursor:pointer;">
+                      <option value="" disabled selected>-- Pilih Guru atau Murid --</option>
+                      <optgroup label="👨‍🏫 Daftar Guru">
+                          <?php
+                          $q_guru = mysqli_query($koneksi, "SELECT id, nama FROM login WHERE jenis='guru' ORDER BY nama ASC");
+                          while($g = mysqli_fetch_assoc($q_guru)) {
+                              echo '<option value="'.$g['id'].'">'.e($g['nama']).' (Guru)</option>';
+                          }
+                          ?>
+                      </optgroup>
+                      <optgroup label="🎓 Daftar Murid">
+                          <?php
+                          $q_murid = mysqli_query($koneksi, "SELECT id, nama FROM login WHERE jenis='murid' AND id != $uid ORDER BY nama ASC");
+                          while($m = mysqli_fetch_assoc($q_murid)) {
+                              echo '<option value="'.$m['id'].'">'.e($m['nama']).' (Murid)</option>';
+                          }
+                          ?>
+                      </optgroup>
+                  </select>
+              </div>
+              
+              <div style="margin-bottom:16px;">
+                  <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px; color:var(--sage-800);">Kategori Laporan</label>
+                  <select name="kategori" class="form-control" required style="cursor:pointer;">
+                      <option value="" disabled selected>-- Pilih Kategori Pelanggaran --</option>
+                      <option value="Perkataan Kasar / Bullying">Perkataan Kasar / Bullying / Cyberbullying</option>
+                      <option value="Pelecehan / Tindak Kekerasan">Pelecehan / Tindak Kekerasan</option>
+                      <option value="Kecurangan / Menyontek">Kecurangan / Menyontek (Sesama Murid)</option>
+                      <option value="Sikap Tidak Profesional">Sikap Tidak Profesional (Guru)</option>
+                      <option value="Lainnya">Lainnya</option>
+                  </select>
+              </div>
+              
+              <div style="margin-bottom:24px;">
+                  <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px; color:var(--sage-800);">Keterangan Lengkap Kejadian</label>
+                  <textarea name="deskripsi" class="form-control" rows="4" placeholder="Ceritakan secara detail apa yang terjadi, kapan, dan di mana..." required style="resize:vertical;"></textarea>
+              </div>
+              
+              <button type="submit" name="kirim_laporan" class="btn-yellow" style="width:100%; padding:14px; background:#E07A5F; font-size:14px; box-shadow:0 4px 12px rgba(224, 122, 95, 0.3);">Kirim Laporan</button>
+          </form>
+
+          <h3 style="font-size:17px; margin-bottom:12px; font-weight:800; color:var(--sage-800);">Riwayat Laporan Saya</h3>
+          <?php
+          $q_lapor = mysqli_query($koneksi, "SELECT l.*, u.nama, u.jenis FROM laporan_pengguna l JOIN login u ON l.terlapor_id = u.id WHERE l.pelapor_id = $uid ORDER BY l.created_at DESC");
+          if(mysqli_num_rows($q_lapor) == 0): ?>
+              <div style="padding:30px; text-align:center; font-size:13px; color:var(--sage-600); border:1px dashed var(--sage-300); border-radius:var(--radius-md);">Kamu belum pernah mengirim laporan apa pun.</div>
+          <?php else:
+              while($l = mysqli_fetch_assoc($q_lapor)):
+                  $status_bg = $l['status'] == 'selesai' ? '#E8F5E9' : ($l['status'] == 'diproses' ? '#E3F2FD' : '#FFF3CD');
+                  $status_color = $l['status'] == 'selesai' ? '#2E7D32' : ($l['status'] == 'diproses' ? '#1565C0' : '#856404');
+          ?>
+              <div style="background:#fff; border:1px solid var(--sage-100); padding:16px; border-radius:var(--radius-sm); margin-bottom:12px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                      <strong style="font-size:14px; color:var(--sage-900);">Melaporkan: <?= e($l['nama']) ?> (<?= ucfirst($l['jenis']) ?>)</strong>
+                      <span style="font-size:11px; font-weight:800; background:<?= $status_bg ?>; color:<?= $status_color ?>; padding:4px 10px; border-radius:50px; border:1px solid <?= $status_color ?>33;"><?= strtoupper($l['status']) ?></span>
+                  </div>
+                  <div style="font-size:13px; color:var(--sage-800); font-weight:700; margin-bottom:4px;">Kategori: <?= e($l['kategori']) ?></div>
+                  <p style="font-size:12.5px; color:var(--sage-600); line-height:1.5; margin-bottom:8px;"><?= nl2br(e($l['deskripsi'])) ?></p>
+                  <div style="font-size:11px; color:var(--sage-500); font-weight:600;">📅 Dikirim pada: <?= date('d M Y, H:i', strtotime($l['created_at'])) ?></div>
+              </div>
+          <?php endwhile; endif; ?>
+      </div>
+
+  <?php break; case 'profil_guru': 
+      $guru_id_get = (int)($_GET['id'] ?? 0);
+      $sg = mysqli_prepare($koneksi, "SELECT id, nama, username, email, jenis, foto FROM login WHERE id=? AND jenis='guru' LIMIT 1");
+      mysqli_stmt_bind_param($sg, 'i', $guru_id_get); mysqli_stmt_execute($sg);
+      $guru_info = mysqli_fetch_assoc(mysqli_stmt_get_result($sg)); mysqli_stmt_close($sg);
+  ?>
+      <a href="javascript:history.back()" class="btn-yellow" style="background:#fff; color:var(--sage-800); border:1px solid var(--sage-100); margin-bottom:16px; box-shadow:none;">&larr; Kembali</a>
+      <?php if(!$guru_info): ?>
+          <div class="card"><p style="color:red">Profil guru tidak ditemukan.</p></div>
+      <?php else: ?>
+          <div class="card" style="max-width: 600px; margin: 0 auto; text-align: center; padding: 40px;">
+              <?php if(!empty($guru_info['foto']) && file_exists($guru_info['foto'])): ?>
+                  <img src="<?= e($guru_info['foto']) ?>" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid var(--sage-500); margin-bottom: 20px; box-shadow: 0 8px 24px rgba(109,140,109,0.2);">
+              <?php else: ?>
+                  <div style="width: 120px; height: 120px; border-radius: 50%; background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 48px; font-weight: 900; margin: 0 auto 20px auto; box-shadow: 0 8px 24px rgba(109,140,109,0.2);">
+                      <?= strtoupper(substr($guru_info['nama'], 0, 1)) ?>
+                  </div>
+              <?php endif; ?>
+              
+              <span style="background: var(--nav-yellow); color: var(--sage-800); font-size: 12px; font-weight: 800; padding: 6px 16px; border-radius: 50px; text-transform: uppercase;">Guru Pengampu</span>
+              <h2 style="font-size: 26px; font-weight: 900; color: var(--sage-900); margin: 12px 0 4px;"><?= e($guru_info['nama']) ?></h2>
+              <p style="font-size: 14px; color: var(--sage-600); font-weight: 700; margin-bottom: 24px;">@<?= e($guru_info['username']) ?></p>
+
+              <div style="background: #FAFCFA; border: 1px solid var(--sage-100); border-radius: var(--radius-md); padding: 20px; text-align: left; margin-bottom: 24px;">
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 13.5px;">
+                      <span style="color: var(--sage-600); font-weight: 600;">Email Resmi:</span>
+                      <strong style="color: var(--sage-900);"><?= e($guru_info['email']) ?></strong>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 13.5px;">
+                      <span style="color: var(--sage-600); font-weight: 600;">Peran Akun:</span>
+                      <strong style="color: var(--sage-800);">Pengajar / Guru Mata Pelajaran</strong>
+                  </div>
+              </div>
+
+              <a href="murid.php?page=laporan" class="btn-yellow" style="background: #E07A5F; font-size: 13px; padding: 10px 20px;">🚩 Laporkan Guru Ini</a>
+          </div>
+      <?php endif; ?>
+
+  <?php break; case 'kelas': ?>
       <div class="card" style="border-left:4px solid var(--sage-500)">
           <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Manajemen & Kode Gabung Kelas</h2>
           <p style="font-size:13px;color:var(--sage-600);margin-bottom:16px">Masukkan kode kelas dari guru untuk mengajukan bergabung.</p>
@@ -472,7 +736,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       break; 
       case 'detail_kelas':
           $kid = (int)($_GET['id'] ?? 0);
-          $s = mysqli_prepare($koneksi, "SELECT k.*, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru, COALESCE(ak.status, 'disetujui') AS status_izin FROM kelas k JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE k.id=? AND ak.user_id=? LIMIT 1");
+          $s = mysqli_prepare($koneksi, "SELECT k.*, k.guru_id, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru, (SELECT foto FROM login l WHERE l.id=k.guru_id) AS foto_guru, COALESCE(ak.status, 'disetujui') AS status_izin FROM kelas k JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE k.id=? AND ak.user_id=? LIMIT 1");
           mysqli_stmt_bind_param($s, 'ii', $kid, $uid); mysqli_stmt_execute($s);
           $kelas_detail = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
   ?>
@@ -541,9 +805,31 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <?php else: ?>
           <!-- RUANG KELAS UTAMA (HANYA DITAMPILKAN JIKA DISETUJUI) -->
           <div class="card" style="background:linear-gradient(135deg,var(--sage-50),#fff)">
-              <h2 style="font-size:22px;color:var(--sage-800);margin-bottom:6px"><?= e($kelas_detail['nama_kelas']) ?></h2>
-              <p style="font-size:13px;color:var(--sage-600)">Pengajar: <strong><?= e($kelas_detail['nama_guru'] ?? 'Guru Pengampu') ?></strong> • Kode Gabung: <strong><?= e($kelas_detail['kode_gabung']) ?></strong></p>
+              <h2 style="font-size:24px; color:var(--sage-800); margin-bottom:12px; font-weight:900;"><?= e($kelas_detail['nama_kelas']) ?></h2>
+              
+              <!-- Bagian Info Pengajar dengan Foto yang Dapat Ditekan -->
+              <div style="display: flex; align-items: center; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--sage-100);">
+                  <a href="murid.php?page=profil_guru&id=<?= (int)$kelas_detail['guru_id'] ?>" title="Lihat Profil Guru" style="display: flex; align-items: center; gap: 14px; text-decoration: none; transition: 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                      <?php if(!empty($kelas_detail['foto_guru']) && file_exists($kelas_detail['foto_guru'])): ?>
+                          <img src="<?= e($kelas_detail['foto_guru']) ?>" style="width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 3px solid var(--sage-500); box-shadow: 0 4px 12px rgba(109,140,109,0.2);">
+                      <?php else: ?>
+                          <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 900; box-shadow: 0 4px 12px rgba(109,140,109,0.2);">
+                              <?= strtoupper(substr($kelas_detail['nama_guru'] ?? 'G', 0, 1)) ?>
+                          </div>
+                      <?php endif; ?>
+                      
+                      <div>
+                          <span style="font-size: 11.5px; font-weight: 800; color: var(--sage-600); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">Pengajar Kelas</span>
+                          <span style="font-size: 18px; font-weight: 900; color: var(--sage-900); text-decoration: underline; text-decoration-color: var(--sage-500); text-underline-offset: 4px;"><?= e($kelas_detail['nama_guru'] ?? 'Guru Pengampu') ?></span>
+                      </div>
+                  </a>
+
+                  <div style="margin-left: auto; font-size: 13px; font-weight: 700; color: var(--sage-800); background: var(--nav-yellow); padding: 8px 14px; border-radius: var(--radius-sm); font-family: monospace; border: 1px dashed #E2D38A;">
+                      Kode: <?= e($kelas_detail['kode_gabung']) ?>
+                  </div>
+              </div>
           </div>
+
           <div class="card">
               <h3 style="font-size:17px;margin-bottom:12px;font-weight:800;color:var(--sage-800);">Tugas di Kelas Ini</h3>
               <?php
@@ -903,12 +1189,65 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
           </div>
       </div>
   <?php endswitch; ?>
+
+  <!-- ================= MODAL BUKU PANDUAN MURID ================= -->
+  <div id="modalPanduan" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 1 3-3h7z"/></svg>
+          Buku Panduan Murid
+        </h3>
+        <button onclick="tutupPanduan()" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <ul>
+          <li><strong>Beranda:</strong> Ringkasan aktivitas siswa seperti total tugas aktif dan quiz yang tersedia di kelas.</li>
+          <li><strong>Kelas:</strong> Tempat untuk meminta gabung kelas (via Kode / QR Gambar) dan melihat status izin masuk dari guru.</li>
+          <li><strong>Absensi:</strong> Fitur untuk mengisi daftar hadir siswa (Hadir, Izin, Sakit) pada sesi yang telah dibuka oleh guru.</li>
+          <li><strong>Tugas:</strong> Panel untuk mengunggah dan mengumpulkan berkas tugas sebelum tenggat waktu berakhir.</li>
+          <li><strong>Quiz:</strong> Fitur untuk mengikuti Live Quiz interaktif secara langsung dan mengumpulkan Poin Kecepatan.</li>
+          <li><strong>Lapor Pelanggaran:</strong> Melaporkan tindakan tidak pantas dari sesama murid maupun guru. (Diakses via Menu ⋮)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
 </main>
 
 <?php render_flash_notification(); ?>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
+// Logika untuk Dropdown Titik 3
+function toggleDropdown(e) {
+    e.preventDefault();
+    document.getElementById("menuLanjutan").classList.toggle("show-dropdown");
+}
+
+// Logika untuk Buku Panduan
+function bukaPanduan(e) {
+    e.preventDefault();
+    document.getElementById('modalPanduan').style.display = 'flex';
+}
+function tutupPanduan() {
+    document.getElementById('modalPanduan').style.display = 'none';
+}
+
+// Menutup dropdown atau modal saat klik di luar area
+window.addEventListener('click', function(e) {
+    if (!e.target.closest('.dropdown')) {
+        let dropdown = document.getElementById("menuLanjutan");
+        if (dropdown && dropdown.classList.contains('show-dropdown')) {
+            dropdown.classList.remove('show-dropdown');
+        }
+    }
+    let modal = document.getElementById('modalPanduan');
+    if (e.target === modal) {
+        tutupPanduan();
+    }
+});
+
 (function () {
     const fileInput = document.getElementById('qr-galeri-input');
     const codeInput = document.getElementById('kode-gabung-input');
