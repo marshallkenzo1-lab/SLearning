@@ -1,1321 +1,480 @@
 <?php
-// SLearning — Dashboard Murid (FULL VERSION - Landing Page "Sedang Menunggu Izin", Approval System & Fitur Report)
-session_start();
-require_once __DIR__ . '/config/koneksi.php';
-require_once __DIR__ . '/config/helpers.php';
+/**
+ * SLearning - Dashboard Murid
+ * Versi bersih: konflik Git dan potongan halaman Login/Register sudah dihapus.
+ */
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-if (!isset($_SESSION['user_id'])) {
+/* =========================
+   KONEKSI DATABASE
+   =========================
+   File koneksi proyek harus membuat variabel mysqli $koneksi.
+   Lokasi umum dicoba otomatis. Jika lokasi berbeda, ubah daftar di bawah.
+*/
+$kandidatKoneksi = [
+    __DIR__ . '/koneksi.php',
+    __DIR__ . '/config/koneksi.php',
+    __DIR__ . '/config.php',
+    __DIR__ . '/includes/koneksi.php',
+    __DIR__ . '/db/koneksi.php'
+];
+foreach ($kandidatKoneksi as $fileKoneksi) {
+    if (is_file($fileKoneksi)) {
+        require_once $fileKoneksi;
+        if (isset($koneksi) && $koneksi instanceof mysqli) {
+            break;
+        }
+    }
+}
+if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
+    http_response_code(500);
+    die('Koneksi database $koneksi tidak ditemukan. Pastikan file koneksi.php tersedia dan membuat variabel mysqli $koneksi.');
+}
+mysqli_set_charset($koneksi, 'utf8mb4');
+
+if (!function_exists('e')) {
+    function e($value): string {
+        return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+    }
+}
+if (!function_exists('tanggal_id')) {
+    function tanggal_id($tanggal, $jam = true): string {
+        if (!$tanggal) return '-';
+        $waktu = strtotime($tanggal);
+        if (!$waktu) return e($tanggal);
+        $bulan = [1=>'Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+        $hasil = date('j', $waktu).' '.$bulan[(int)date('n', $waktu)].' '.date('Y', $waktu);
+        return $jam ? $hasil.' '.date('H:i', $waktu) : $hasil;
+    }
+}
+function flash_murid(string $pesan, string $tipe = 'success', string $judul = 'Informasi'): void {
+    $_SESSION['flash_murid'] = ['pesan'=>$pesan, 'tipe'=>$tipe, 'judul'=>$judul];
+}
+function stmt_row(mysqli $db, string $sql, string $types = '', array $params = []): ?array {
+    $stmt = mysqli_prepare($db, $sql);
+    if (!$stmt) return null;
+    if ($types !== '') mysqli_stmt_bind_param($stmt, $types, ...$params);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $row = $result ? mysqli_fetch_assoc($result) : null;
+    mysqli_stmt_close($stmt);
+    return $row ?: null;
+}
+function stmt_rows(mysqli $db, string $sql, string $types = '', array $params = []): array {
+    $stmt = mysqli_prepare($db, $sql);
+    if (!$stmt) return [];
+    if ($types !== '') mysqli_stmt_bind_param($stmt, $types, ...$params);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $rows = [];
+    if ($result) while ($row = mysqli_fetch_assoc($result)) $rows[] = $row;
+    mysqli_stmt_close($stmt);
+    return $rows;
+}
+
+/* =========================
+   AUTENTIKASI
+   ========================= */
+if (empty($_SESSION['user_id'])) {
     if (isset($_GET['gabung'])) {
         $_SESSION['kode_gabung_pending'] = strtoupper(trim((string)$_GET['gabung']));
     }
-    header("Location: login.php"); exit;
-}
-if (($_SESSION['jenis'] ?? '') === 'guru') { header("Location: guru.php"); exit; }
-
-$uid = (int)$_SESSION['user_id'];
-$s = mysqli_prepare($koneksi, "SELECT id, nama, username, email, jenis, level, password, foto FROM login WHERE id=? LIMIT 1");
-mysqli_stmt_bind_param($s, "i", $uid); mysqli_stmt_execute($s);
-$user = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-if (!$user) { header("Location: logout.php"); exit; }
-
-foreach (['nama','username','email','jenis','level','foto'] as $k) $_SESSION[$k] = $user[$k] ?? '';
-$nama_murid = $user['nama']; 
-$username = $user['username'];
-$foto_profil = $user['foto'] ?? '';
-
-// AUTO-MIGRATION DATABASE: Tambahkan kolom status pada anggota_kelas jika belum ada
-$cekStatusAK = @mysqli_query($koneksi, "SHOW COLUMNS FROM anggota_kelas LIKE 'status'");
-if ($cekStatusAK && mysqli_num_rows($cekStatusAK) === 0) {
-    @mysqli_query($koneksi, "ALTER TABLE anggota_kelas ADD COLUMN status ENUM('pending','disetujui','ditolak') NOT NULL DEFAULT 'pending'");
-    @mysqli_query($koneksi, "UPDATE anggota_kelas SET status='disetujui' WHERE status IS NULL OR status=''");
-}
-
-// AUTO-MIGRATION DATABASE: Buat tabel laporan_pengguna untuk menampung report dari murid & guru
-$cekLaporan = @mysqli_query($koneksi, "SHOW TABLES LIKE 'laporan_pengguna'");
-if ($cekLaporan && mysqli_num_rows($cekLaporan) === 0) {
-    @mysqli_query($koneksi, "CREATE TABLE laporan_pengguna (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        pelapor_id INT NOT NULL,
-        terlapor_id INT NOT NULL,
-        kategori VARCHAR(100) NOT NULL,
-        deskripsi TEXT,
-        status ENUM('pending','diproses','selesai') NOT NULL DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )");
-}
-
-function set_flash_notification($pesan, $tipe = 'success', $judul = 'Berhasil!') {
-    $_SESSION['swal_msg'] = ['title' => $judul, 'text' => $pesan, 'icon' => $tipe];
-}
-function render_flash_notification() {
-    if (isset($_SESSION['swal_msg'])) {
-        $m = $_SESSION['swal_msg'];
-        unset($_SESSION['swal_msg']);
-        echo "<script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-              <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    Swal.fire({
-                        title: '{$m['title']}',
-                        text: '{$m['text']}',
-                        icon: '{$m['icon']}',
-                        confirmButtonText: 'OK',
-                        confirmButtonColor: '#6D8C6D'
-                    });
-                });
-              </script>";
-    }
-}
-
-// Tangkap Halaman Aktif dari URL (?page=...)
-$page = $_GET['page'] ?? 'beranda';
-$quiz_id_get = (int)($_GET['quiz_id'] ?? 0);
-
-// =========================================================================
-// API RINGAN: Pengecekan Status Kuis & Kehadiran Lobi
-// =========================================================================
-if ($page === 'api_cek_kuis' && $quiz_id_get > 0) {
-    header('Content-Type: application/json');
-    mysqli_query($koneksi, "INSERT INTO quiz_lobby (quiz_id, user_id) VALUES ($quiz_id_get, $uid) ON DUPLICATE KEY UPDATE waktu=CURRENT_TIMESTAMP");
-    $q_api = mysqli_query($koneksi, "SELECT status FROM quiz WHERE id = $quiz_id_get");
-    $status_api = $q_api ? (mysqli_fetch_assoc($q_api)['status'] ?? 'menunggu') : 'menunggu';
-    echo json_encode(['status' => $status_api]);
-    exit; 
-}
-
-// ---------- PROSES AKSI POST ----------
-
-// 1. Proses Update Profil
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profil'])) {
-    $nama_baru = trim($_POST['nama']); $email_baru = trim($_POST['email']);
-    $pass_lama = $_POST['password_lama']; $pass_baru = $_POST['password_baru'];
-    $update_sql = "UPDATE login SET nama=?, email=?"; $params = [$nama_baru, $email_baru]; $types = "ss";
-
-    if (!empty($pass_baru)) {
-        if (password_verify($pass_lama, $user['password'])) {
-            $update_sql .= ", password=?"; $params[] = password_hash($pass_baru, PASSWORD_DEFAULT); $types .= "s";
-        } else {
-            set_flash_notification('Password lama yang dimasukkan salah!', 'error', 'Gagal Simpan');
-            header("Location: murid.php?page=profil"); exit;
-        }
-    }
-
-    if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
-        $ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
-        if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif'])) {
-            $dir = 'uploads/profil/'; if (!is_dir($dir)) mkdir($dir, 0777, true);
-            $path_upload = $dir . 'profil_' . $uid . '_' . time() . '.' . $ext;
-            if (move_uploaded_file($_FILES['foto']['tmp_name'], $path_upload)) {
-                $update_sql .= ", foto=?"; $params[] = $path_upload; $types .= "s";
-            }
-        } else { set_flash_notification('Format foto harus JPG/PNG/GIF.', 'warning', 'Format Tidak Didukung'); }
-    }
-
-    $update_sql .= " WHERE id=?"; $params[] = $uid; $types .= "i";
-    $upd = mysqli_prepare($koneksi, $update_sql);
-    mysqli_stmt_bind_param($upd, $types, ...$params);
-    if (mysqli_stmt_execute($upd)) { set_flash_notification('Profil berhasil diperbarui.', 'success', 'Tersimpan'); } 
-    else { set_flash_notification('Terjadi kesalahan saat menyimpan profil.', 'error', 'Gagal'); }
-    mysqli_stmt_close($upd); header("Location: murid.php?page=profil"); exit;
-}
-
-// 2. Proses Gabung Kelas (Memerlukan Izin Guru)
-if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['gabung_kelas'])) {
-    $kode = strtoupper(trim($_POST['kode_gabung'] ?? ''));
-    if ($kode==='') { set_flash_notification('Masukkan kode kelas.', 'error'); } 
-    else {
-        $s = mysqli_prepare($koneksi, "SELECT id, nama_kelas FROM kelas WHERE kode_gabung=? LIMIT 1");
-        mysqli_stmt_bind_param($s,'s',$kode); mysqli_stmt_execute($s);
-        $kls = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-        if (!$kls) { set_flash_notification('Kode kelas tidak ditemukan.', 'error', 'Gagal'); } 
-        else {
-            $kelas_id = (int)$kls['id'];
-            $s = mysqli_prepare($koneksi, "SELECT id, COALESCE(status, 'disetujui') AS status_izin FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1");
-            mysqli_stmt_bind_param($s,'ii',$kelas_id,$uid); mysqli_stmt_execute($s);
-            $ada = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-            
-            if ($ada) { 
-                if ($ada['status_izin'] === 'disetujui') {
-                    set_flash_notification('Kamu sudah tergabung di kelas tersebut.', 'info', 'Sudah Bergabung'); 
-                    header('Location: murid.php?page=detail_kelas&id='.$kelas_id); exit;
-                } elseif ($ada['status_izin'] === 'pending') {
-                    set_flash_notification('Permintaan bergabung kamu masih menunggu persetujuan guru.', 'warning', 'Menunggu Izin'); 
-                    header('Location: murid.php?page=detail_kelas&id='.$kelas_id); exit;
-                } else {
-                    mysqli_query($koneksi, "UPDATE anggota_kelas SET status='pending' WHERE id=".(int)$ada['id']);
-                    set_flash_notification('Permintaan bergabung telah dikirim ulang ke guru.', 'success', 'Permintaan Terkirim');
-                    header('Location: murid.php?page=detail_kelas&id='.$kelas_id); exit;
-                }
-            } else {
-                $ins = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id, user_id, status) VALUES (?,?,'pending')");
-                mysqli_stmt_bind_param($ins,'ii',$kelas_id,$uid);
-                if (mysqli_stmt_execute($ins)) { 
-                    set_flash_notification('Permintaan bergabung ke kelas ' . $kls['nama_kelas'] . ' telah dikirim! Silakan tunggu izin dari guru.', 'success', 'Menunggu Persetujuan'); 
-                    mysqli_stmt_close($ins);
-                    header('Location: murid.php?page=detail_kelas&id='.$kelas_id); exit;
-                }
-                mysqli_stmt_close($ins);
-            }
-        }
-    }
-    header('Location: murid.php?page=kelas'); exit;
-}
-
-// Gabung kelas melalui tautan/QR Code dari guru (?page=kelas&gabung=KODE)
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' && (isset($_GET['gabung']) || !empty($_SESSION['kode_gabung_pending']))) {
-    $kode_link = strtoupper(trim((string)($_GET['gabung'] ?? $_SESSION['kode_gabung_pending'] ?? '')));
-    unset($_SESSION['kode_gabung_pending']);
-    if ($kode_link === '') {
-        set_flash_notification('Link gabung kelas tidak valid.', 'error', 'Gagal');
-    } else {
-        $cek_kelas_link = mysqli_prepare($koneksi, "SELECT id, nama_kelas FROM kelas WHERE kode_gabung=? LIMIT 1");
-        mysqli_stmt_bind_param($cek_kelas_link, 's', $kode_link);
-        mysqli_stmt_execute($cek_kelas_link);
-        $kelas_link = mysqli_fetch_assoc(mysqli_stmt_get_result($cek_kelas_link));
-        mysqli_stmt_close($cek_kelas_link);
-
-        if (!$kelas_link) {
-            set_flash_notification('Kelas tidak ditemukan. Minta link terbaru dari guru.', 'error', 'Link Tidak Valid');
-        } else {
-            $kelas_link_id = (int)$kelas_link['id'];
-            $cek_anggota_link = mysqli_prepare($koneksi, "SELECT id, COALESCE(status, 'disetujui') AS status_izin FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1");
-            mysqli_stmt_bind_param($cek_anggota_link, 'ii', $kelas_link_id, $uid);
-            mysqli_stmt_execute($cek_anggota_link);
-            $sudah_gabung_link = mysqli_fetch_assoc(mysqli_stmt_get_result($cek_anggota_link));
-            mysqli_stmt_close($cek_anggota_link);
-
-            if ($sudah_gabung_link) {
-                if ($sudah_gabung_link['status_izin'] === 'disetujui') {
-                    set_flash_notification('Kamu sudah tergabung di kelas ' . $kelas_link['nama_kelas'] . '.', 'info', 'Sudah Bergabung');
-                } else {
-                    set_flash_notification('Permintaan kamu sedang menunggu izin dari guru.', 'warning', 'Menunggu Persetujuan');
-                }
-                header('Location: murid.php?page=detail_kelas&id='.$kelas_link_id); exit;
-            } else {
-                $gabung_link = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id, user_id, status) VALUES (?,?,'pending')");
-                mysqli_stmt_bind_param($gabung_link, 'ii', $kelas_link_id, $uid);
-                if (mysqli_stmt_execute($gabung_link)) {
-                    set_flash_notification('Permintaan bergabung ke kelas ' . $kelas_link['nama_kelas'] . ' telah dikirim!', 'success', 'Menunggu Persetujuan');
-                    mysqli_stmt_close($gabung_link);
-                    header('Location: murid.php?page=detail_kelas&id='.$kelas_link_id); exit;
-                }
-                mysqli_stmt_close($gabung_link);
-            }
-        }
-    }
-    header('Location: murid.php?page=kelas');
+    header('Location: login.php');
     exit;
 }
-
-// 3. Proses Isi Absensi
-if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['isi_absen'])) {
-    $aid = (int)($_POST['absensi_id'] ?? 0); $status = $_POST['status'] ?? 'hadir';
-    $s = mysqli_prepare($koneksi, "SELECT a.id FROM absensi a JOIN anggota_kelas ak ON ak.kelas_id=a.kelas_id WHERE a.id=? AND ak.user_id=? AND COALESCE(ak.status, 'disetujui')='disetujui' LIMIT 1");
-    mysqli_stmt_bind_param($s,'ii',$aid,$uid); mysqli_stmt_execute($s);
-    if (mysqli_fetch_assoc(mysqli_stmt_get_result($s))) {
-        $ins = mysqli_prepare($koneksi, "INSERT INTO absensi_hadir (absensi_id, user_id, status) VALUES (?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status), waktu=CURRENT_TIMESTAMP");
-        mysqli_stmt_bind_param($ins,'iis',$aid,$uid,$status); mysqli_stmt_execute($ins); mysqli_stmt_close($ins);
-        set_flash_notification('Kehadiran berhasil dicatat.', 'success');
-    }
-    mysqli_stmt_close($s); header('Location: murid.php?page=absensi'); exit;
+if (($_SESSION['jenis'] ?? '') === 'guru') {
+    header('Location: guru.php');
+    exit;
 }
+if (($_SESSION['jenis'] ?? '') === 'waka') {
+    header('Location: waka.php');
+    exit;
+}
+$uid = (int)$_SESSION['user_id'];
+$user = stmt_row($koneksi, "SELECT id,nama,username,email,jenis,level,password,foto FROM login WHERE id=? LIMIT 1", 'i', [$uid]);
+if (!$user || ($user['jenis'] ?? '') !== 'murid') {
+    session_unset();
+    session_destroy();
+    header('Location: login.php');
+    exit;
+}
+foreach (['nama','username','email','jenis','level','foto'] as $kolom) {
+    $_SESSION[$kolom] = $user[$kolom] ?? '';
+}
+$nama_murid = $user['nama'];
+$foto_profil = $user['foto'] ?? '';
 
-// 4. Proses Upload / Kumpulkan Tugas
-if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['kumpulkan_tugas'])) {
-    $tid = (int)($_POST['tugas_id'] ?? 0);
-    $s = mysqli_prepare($koneksi, "SELECT t.id FROM tugas t JOIN anggota_kelas ak ON ak.kelas_id=t.kelas_id WHERE t.id=? AND ak.user_id=? AND COALESCE(ak.status, 'disetujui')='disetujui' LIMIT 1");
-    mysqli_stmt_bind_param($s,'ii',$tid,$uid); mysqli_stmt_execute($s);
-    $valid = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-    
-    if (!$valid) {
-        set_flash_notification('Tugas tidak ditemukan atau akses ditolak.', 'error', 'Gagal');
-    } elseif (!isset($_FILES['file_tugas']) || $_FILES['file_tugas']['error']!==UPLOAD_ERR_OK) {
-        set_flash_notification('Pilih file tugas terlebih dahulu.', 'error', 'Perhatian');
-    } else {
-        $f = $_FILES['file_tugas']; $maks = 10*1024*1024;
-        $allow = ['pdf','doc','docx','ppt','pptx','zip','rar','jpg','jpeg','png'];
-        $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
-        
-        if ($f['size'] > $maks) {
-            set_flash_notification('Ukuran file maksimal 10 MB.', 'error', 'File Terlalu Besar');
-        } elseif (!in_array($ext, $allow, true)) {
-            set_flash_notification('Format file tidak diizinkan.', 'error', 'Format Salah');
+/* =========================
+   MIGRASI RINGAN
+   ========================= */
+$cek = @mysqli_query($koneksi, "SHOW COLUMNS FROM anggota_kelas LIKE 'status'");
+if ($cek && mysqli_num_rows($cek) === 0) {
+    @mysqli_query($koneksi, "ALTER TABLE anggota_kelas ADD COLUMN status ENUM('pending','disetujui','ditolak') NOT NULL DEFAULT 'pending'");
+}
+@mysqli_query($koneksi, "CREATE TABLE IF NOT EXISTS laporan_pengguna (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    pelapor_id INT NOT NULL,
+    terlapor_id INT NOT NULL,
+    kategori VARCHAR(100) NOT NULL,
+    deskripsi TEXT,
+    status ENUM('pending','diproses','selesai') NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)");
+
+/* =========================
+   PROSES FORM
+   ========================= */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Update profil
+    if (isset($_POST['update_profil'])) {
+        $nama = trim($_POST['nama'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        if ($nama === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            flash_murid('Nama dan email yang valid wajib diisi.', 'error');
         } else {
-            $dir = __DIR__.'/uploads/tugas/'; 
-            if (!is_dir($dir)) mkdir($dir, 0777, true);
-            $baru = 'tugas_'.$uid.'_'.$tid.'_'.time().'.'.$ext; 
-            $lok = $dir.$baru; 
-            $dbp = 'uploads/tugas/'.$baru;
-            
-            if (move_uploaded_file($f['tmp_name'], $lok)) {
-                $s = mysqli_prepare($koneksi, "SELECT id, file_path FROM pengumpulan_tugas WHERE tugas_id=? AND user_id=? LIMIT 1");
-                mysqli_stmt_bind_param($s,'ii',$tid,$uid); mysqli_stmt_execute($s);
-                $lama = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-                
-                if ($lama) {
-                    if (is_file(__DIR__.'/'.$lama['file_path'])) @unlink(__DIR__.'/'.$lama['file_path']);
-                    $s = mysqli_prepare($koneksi, "UPDATE pengumpulan_tugas SET nama_file=?, file_path=?, nilai=NULL, feedback=NULL, dikumpulkan_at=CURRENT_TIMESTAMP WHERE id=?");
-                    mysqli_stmt_bind_param($s,'ssi',$f['name'],$dbp,$lama['id']);
-                } else {
-                    $s = mysqli_prepare($koneksi, "INSERT INTO pengumpulan_tugas (tugas_id, user_id, nama_file, file_path) VALUES (?,?,?,?)");
-                    mysqli_stmt_bind_param($s,'iiss',$tid,$uid,$f['name'],$dbp);
+            $sql = "UPDATE login SET nama=?, email=?";
+            $types = 'ss';
+            $params = [$nama, $email];
+            $passLama = $_POST['password_lama'] ?? '';
+            $passBaru = $_POST['password_baru'] ?? '';
+            if ($passBaru !== '') {
+                if (!password_verify($passLama, $user['password'])) {
+                    flash_murid('Password lama tidak sesuai.', 'error', 'Gagal');
+                    header('Location: murid.php?page=profil'); exit;
                 }
-                
-                mysqli_stmt_execute($s);
-                mysqli_stmt_close($s);
-                set_flash_notification('Tugas berhasil dikumpulkan!', 'success', 'Berhasil');
+                if (strlen($passBaru) < 8) {
+                    flash_murid('Password baru minimal 8 karakter.', 'error');
+                    header('Location: murid.php?page=profil'); exit;
+                }
+                $sql .= ', password=?';
+                $types .= 's';
+                $params[] = password_hash($passBaru, PASSWORD_DEFAULT);
+            }
+            if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
+                $ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
+                $mime = mime_content_type($_FILES['foto']['tmp_name']);
+                $allowed = ['jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','gif'=>'image/gif'];
+                if (isset($allowed[$ext]) && $mime === $allowed[$ext]) {
+                    $folder = __DIR__.'/uploads/profil/';
+                    if (!is_dir($folder)) mkdir($folder, 0755, true);
+                    $namaFile = 'murid_'.$uid.'_'.bin2hex(random_bytes(5)).'.'.$ext;
+                    if (move_uploaded_file($_FILES['foto']['tmp_name'], $folder.$namaFile)) {
+                        $sql .= ', foto=?'; $types .= 's'; $params[] = 'uploads/profil/'.$namaFile;
+                    }
+                } else {
+                    flash_murid('Foto harus berupa JPG, PNG, atau GIF.', 'error');
+                }
+            }
+            $sql .= ' WHERE id=?'; $types .= 'i'; $params[] = $uid;
+            $st = mysqli_prepare($koneksi, $sql);
+            if ($st) {
+                mysqli_stmt_bind_param($st, $types, ...$params);
+                $ok = mysqli_stmt_execute($st);
+                mysqli_stmt_close($st);
+                flash_murid($ok ? 'Profil berhasil diperbarui.' : 'Profil gagal diperbarui.', $ok ? 'success' : 'error');
+            } else flash_murid('Query profil gagal diproses.', 'error');
+        }
+        header('Location: murid.php?page=profil'); exit;
+    }
+
+    // Gabung kelas
+    if (isset($_POST['gabung_kelas'])) {
+        $kode = strtoupper(trim($_POST['kode_gabung'] ?? ''));
+        $kelas = $kode !== '' ? stmt_row($koneksi, "SELECT id,nama_kelas FROM kelas WHERE kode_gabung=? LIMIT 1", 's', [$kode]) : null;
+        if (!$kelas) {
+            flash_murid('Kode kelas tidak ditemukan.', 'error', 'Gagal');
+        } else {
+            $kid = (int)$kelas['id'];
+            $anggota = stmt_row($koneksi, "SELECT id,status FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1", 'ii', [$kid,$uid]);
+            if ($anggota) {
+                if (($anggota['status'] ?? 'disetujui') === 'disetujui') {
+                    flash_murid('Kamu sudah tergabung di kelas ini.', 'info');
+                } else {
+                    $st = mysqli_prepare($koneksi, "UPDATE anggota_kelas SET status='pending' WHERE id=?");
+                    mysqli_stmt_bind_param($st, 'i', $anggota['id']); mysqli_stmt_execute($st); mysqli_stmt_close($st);
+                    flash_murid('Permintaan bergabung dikirim ulang.', 'success');
+                }
+            } else {
+                $st = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id,user_id,status) VALUES (?,?,'pending')");
+                mysqli_stmt_bind_param($st, 'ii', $kid, $uid);
+                $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
+                flash_murid($ok ? 'Permintaan bergabung dikirim. Tunggu persetujuan guru.' : 'Gagal mengirim permintaan.', $ok ? 'success' : 'error');
+            }
+            header('Location: murid.php?page=detail_kelas&id='.$kid); exit;
+        }
+        header('Location: murid.php?page=kelas'); exit;
+    }
+
+    // Isi absensi
+    if (isset($_POST['isi_absen'])) {
+        $aid = (int)($_POST['absensi_id'] ?? 0);
+        $statusAbsen = $_POST['status'] ?? 'hadir';
+        if (!in_array($statusAbsen, ['hadir','izin','sakit'], true)) $statusAbsen = 'hadir';
+        $valid = stmt_row($koneksi, "SELECT a.id FROM absensi a JOIN anggota_kelas ak ON ak.kelas_id=a.kelas_id WHERE a.id=? AND ak.user_id=? AND COALESCE(ak.status,'disetujui')='disetujui' LIMIT 1", 'ii', [$aid,$uid]);
+        if ($valid) {
+            $st = mysqli_prepare($koneksi, "INSERT INTO absensi_hadir (absensi_id,user_id,status) VALUES (?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status), waktu=CURRENT_TIMESTAMP");
+            mysqli_stmt_bind_param($st, 'iis', $aid, $uid, $statusAbsen);
+            $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
+            flash_murid($ok ? 'Kehadiran berhasil dicatat.' : 'Absensi gagal disimpan.', $ok ? 'success' : 'error');
+        } else flash_murid('Sesi absensi tidak ditemukan atau akses ditolak.', 'error');
+        header('Location: murid.php?page=absensi'); exit;
+    }
+
+    // Kumpulkan tugas
+    if (isset($_POST['kumpulkan_tugas'])) {
+        $tid = (int)($_POST['tugas_id'] ?? 0);
+        $valid = stmt_row($koneksi, "SELECT t.id FROM tugas t JOIN anggota_kelas ak ON ak.kelas_id=t.kelas_id WHERE t.id=? AND ak.user_id=? AND COALESCE(ak.status,'disetujui')='disetujui' LIMIT 1", 'ii', [$tid,$uid]);
+        if (!$valid) {
+            flash_murid('Tugas tidak ditemukan atau akses ditolak.', 'error');
+        } elseif (!isset($_FILES['file_tugas']) || $_FILES['file_tugas']['error'] !== UPLOAD_ERR_OK) {
+            flash_murid('Pilih file tugas terlebih dahulu.', 'error');
+        } else {
+            $f = $_FILES['file_tugas'];
+            $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+            $allowed = ['pdf','doc','docx','ppt','pptx','zip','rar','jpg','jpeg','png'];
+            if ($f['size'] > 10*1024*1024 || !in_array($ext, $allowed, true)) {
+                flash_murid('File maksimal 10 MB dan format harus PDF/DOC/DOCX/PPT/PPTX/ZIP/RAR/JPG/PNG.', 'error');
+            } else {
+                $folder = __DIR__.'/uploads/tugas/';
+                if (!is_dir($folder)) mkdir($folder, 0755, true);
+                $fileBaru = 'tugas_'.$uid.'_'.$tid.'_'.bin2hex(random_bytes(5)).'.'.$ext;
+                $pathDatabase = 'uploads/tugas/'.$fileBaru;
+                if (move_uploaded_file($f['tmp_name'], $folder.$fileBaru)) {
+                    $lama = stmt_row($koneksi, "SELECT id,file_path FROM pengumpulan_tugas WHERE tugas_id=? AND user_id=? LIMIT 1", 'ii', [$tid,$uid]);
+                    if ($lama) {
+                        $st = mysqli_prepare($koneksi, "UPDATE pengumpulan_tugas SET nama_file=?,file_path=?,nilai=NULL,feedback=NULL,dikumpulkan_at=CURRENT_TIMESTAMP WHERE id=?");
+                        mysqli_stmt_bind_param($st, 'ssi', $f['name'], $pathDatabase, $lama['id']);
+                    } else {
+                        $st = mysqli_prepare($koneksi, "INSERT INTO pengumpulan_tugas (tugas_id,user_id,nama_file,file_path) VALUES (?,?,?,?)");
+                        mysqli_stmt_bind_param($st, 'iiss', $tid, $uid, $f['name'], $pathDatabase);
+                    }
+                    $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
+                    flash_murid($ok ? 'Tugas berhasil dikumpulkan.' : 'Gagal menyimpan data tugas.', $ok ? 'success' : 'error');
+                } else flash_murid('File gagal diunggah.', 'error');
             }
         }
+        header('Location: murid.php?page=tugas'); exit;
     }
-    header('Location: murid.php?page=tugas&detail_tugas='.$tid); exit;
-}
 
-// 5. Proses Simpan Hasil Quiz
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_quiz_hasil'])) {
-    $q_id_submit = (int)$_POST['quiz_id']; $benar = (int)$_POST['benar']; $total = (int)$_POST['total']; $skor_poin = (int)$_POST['skor_total'];
-    $cek = mysqli_query($koneksi, "SELECT id FROM quiz_hasil WHERE quiz_id = $q_id_submit AND user_id = $uid");
-    if(mysqli_num_rows($cek) === 0) {
-        $ins = mysqli_prepare($koneksi, "INSERT INTO quiz_hasil (quiz_id, user_id, benar, total, skor) VALUES (?, ?, ?, ?, ?)");
-        mysqli_stmt_bind_param($ins, "iiiii", $q_id_submit, $uid, $benar, $total, $skor_poin);
-        mysqli_stmt_execute($ins); mysqli_stmt_close($ins);
-        set_flash_notification("Skor Kecepatan Anda: $skor_poin Poin.", 'success', 'Kuis Selesai!');
-    }
-    header('Location: murid.php?page=quiz'); exit;
-}
-
-// 6. Proses Kirim Laporan Pengguna (Guru / Murid)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['kirim_laporan'])) {
-    $terlapor_id = (int)$_POST['terlapor_id'];
-    $kategori = trim($_POST['kategori']);
-    $deskripsi = trim($_POST['deskripsi']);
-
-    if ($terlapor_id === $uid) {
-        set_flash_notification('Kamu tidak bisa melaporkan dirimu sendiri.', 'error', 'Aksi Ditolak');
-    } else {
-        $ins = mysqli_prepare($koneksi, "INSERT INTO laporan_pengguna (pelapor_id, terlapor_id, kategori, deskripsi) VALUES (?, ?, ?, ?)");
-        mysqli_stmt_bind_param($ins, "iiss", $uid, $terlapor_id, $kategori, $deskripsi);
-        if (mysqli_stmt_execute($ins)) {
-            set_flash_notification('Laporan berhasil dikirim dan akan segera diproses.', 'success', 'Terkirim');
+    // Kirim laporan
+    if (isset($_POST['kirim_laporan'])) {
+        $terlapor = (int)($_POST['terlapor_id'] ?? 0);
+        $kategori = trim($_POST['kategori'] ?? '');
+        $deskripsi = trim($_POST['deskripsi'] ?? '');
+        $tujuan = stmt_row($koneksi, "SELECT id FROM login WHERE id=? AND jenis IN ('guru','murid')", 'i', [$terlapor]);
+        if (!$tujuan || $terlapor === $uid || $kategori === '' || $deskripsi === '') {
+            flash_murid('Data laporan tidak valid.', 'error');
         } else {
-            set_flash_notification('Terjadi kesalahan saat mengirim laporan.', 'error', 'Gagal');
+            $st = mysqli_prepare($koneksi, "INSERT INTO laporan_pengguna (pelapor_id,terlapor_id,kategori,deskripsi) VALUES (?,?,?,?)");
+            mysqli_stmt_bind_param($st, 'iiss', $uid, $terlapor, $kategori, $deskripsi);
+            $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
+            flash_murid($ok ? 'Laporan berhasil dikirim.' : 'Laporan gagal dikirim.', $ok ? 'success' : 'error');
         }
-        mysqli_stmt_close($ins);
+        header('Location: murid.php?page=laporan'); exit;
     }
-    header("Location: murid.php?page=laporan"); exit;
 }
 
-// Data Pendukung Dasbor
-$daftar_kelas = [];
-$s = mysqli_prepare($koneksi, "SELECT k.id, k.nama_kelas, k.kode_gabung, COALESCE(ak.status, 'disetujui') AS status_izin, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id WHERE ak.user_id=? ORDER BY k.id DESC");
-mysqli_stmt_bind_param($s,'i',$uid); mysqli_stmt_execute($s);
-$rr = mysqli_stmt_get_result($s); while ($r=mysqli_fetch_assoc($rr)) $daftar_kelas[]=$r;
-mysqli_stmt_close($s);
-
-// Filter ID Kelas yang HANYA berstatus disetujui untuk tugas, absensi, quiz & notifikasi
-$approved_kelas_ids = array_filter(array_map(function($k) {
-    return $k['status_izin'] === 'disetujui' ? (int)$k['id'] : null;
-}, $daftar_kelas));
-$in_kelas = !empty($approved_kelas_ids) ? implode(',', $approved_kelas_ids) : '0';
-
-$stat_tugas_aktif = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM tugas WHERE kelas_id IN ($in_kelas)"))['jml'] ?? 0;
-$stat_quiz = mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) as jml FROM quiz WHERE kelas_id IN ($in_kelas)"))['jml'] ?? 0;
-
-// Ambil daftar notifikasi (Tugas & Quiz dari kelas disetujui)
-$notifikasi_list = [];
-if ($in_kelas !== '0') {
-    $qn = mysqli_query($koneksi, "SELECT judul_tugas AS judul, 'tugas' AS tipe, created_at AS tanggal FROM tugas WHERE kelas_id IN ($in_kelas) UNION SELECT judul AS judul, 'quiz' AS tipe, created_at AS tanggal FROM quiz WHERE kelas_id IN ($in_kelas) ORDER BY tanggal DESC LIMIT 15");
-    while($qn && $rn = mysqli_fetch_assoc($qn)) { $notifikasi_list[] = $rn; }
+/* =========================
+   DATA DASHBOARD
+   ========================= */
+$kelasSaya = stmt_rows($koneksi, "SELECT k.id,k.nama_kelas,k.kode_gabung,k.guru_id,COALESCE(ak.status,'disetujui') status_izin,l.nama nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id LEFT JOIN login l ON l.id=k.guru_id WHERE ak.user_id=? ORDER BY k.id DESC", 'i', [$uid]);
+$kelasDisetujui = [];
+foreach ($kelasSaya as $k) if (($k['status_izin'] ?? 'disetujui') === 'disetujui') $kelasDisetujui[] = (int)$k['id'];
+$inKelas = $kelasDisetujui ? implode(',', $kelasDisetujui) : '0';
+$statTugas = 0; $statQuiz = 0;
+$r = mysqli_query($koneksi, "SELECT COUNT(*) jml FROM tugas WHERE kelas_id IN ($inKelas)");
+if ($r) $statTugas = (int)(mysqli_fetch_assoc($r)['jml'] ?? 0);
+$r = mysqli_query($koneksi, "SELECT COUNT(*) jml FROM quiz WHERE kelas_id IN ($inKelas)");
+if ($r) $statQuiz = (int)(mysqli_fetch_assoc($r)['jml'] ?? 0);
+$notifikasi = [];
+if ($inKelas !== '0') {
+    $r = mysqli_query($koneksi, "SELECT judul_tugas judul,'tugas' tipe,created_at tanggal FROM tugas WHERE kelas_id IN ($inKelas) UNION SELECT judul,'quiz' tipe,created_at tanggal FROM quiz WHERE kelas_id IN ($inKelas) ORDER BY tanggal DESC LIMIT 15");
+    if ($r) while ($x = mysqli_fetch_assoc($r)) $notifikasi[] = $x;
 }
-$jml_notif = count($notifikasi_list);
+$page = $_GET['page'] ?? 'beranda';
+$quizId = (int)($_GET['quiz_id'] ?? 0);
+$flash = $_SESSION['flash_murid'] ?? null;
+unset($_SESSION['flash_murid']);
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard Murid — SLearning</title>
-<link rel="icon" type="image/png" href="assets/img/logo-smkn7.png">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SLearning | Dashboard Murid</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
-:root{--nav-yellow:#FFF8D6;--nav-yellow-dark:#F2E7B5;--sage-body:#F4F7F5;--sage-50:#E8F0E8;--sage-100:#D1E0D1;--sage-500:#6D8C6D;--sage-600:#577357;--sage-800:#2F402F;--sage-900:#1D261D;--radius-sm:12px;--radius-md:16px;--radius-lg:24px; --bg-card: #FFFFFF; --shadow-sm: 0 4px 12px rgba(109, 140, 109, 0.05); --shadow-md: 0 8px 24px rgba(109, 140, 109, 0.08); --shadow-lg: 0 16px 40px rgba(109, 140, 109, 0.12);}
-*{box-sizing:border-box;margin:0;padding:0;font-family:'Plus Jakarta Sans',sans-serif}
-body { background-color: var(--sage-body); color: var(--sage-900); min-height: 100vh; padding-bottom: 60px; position: relative; overflow-x: hidden; }
-body::before { content: ''; position: fixed; top: -10%; left: -5%; width: 50vw; height: 50vw; background: radial-gradient(circle, rgba(255, 248, 214, 0.8) 0%, rgba(255, 248, 214, 0) 70%); border-radius: 50%; pointer-events: none; z-index: -1; }
-body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60vw; height: 60vw; background: radial-gradient(circle, rgba(109, 140, 109, 0.15) 0%, rgba(109, 140, 109, 0) 70%); border-radius: 50%; pointer-events: none; z-index: -1; }
-
-.header { background: linear-gradient(180deg, var(--nav-yellow) 0%, #FFFDF6 100%); position: relative; z-index: 10; padding-top: 16px; border-bottom: 1px solid var(--nav-yellow-dark); box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
-.header-top { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 32px 16px; }
-.logo { display: flex; align-items: center; gap: 12px; text-decoration: none; font-size: 22px; font-weight: 800; color: var(--sage-800); letter-spacing: -0.5px; }
-.logo svg { width: 30px; height: 30px; color: var(--sage-600); }
-.header-icons { display: flex; align-items: center; gap: 24px; }
-.header-icons a { color: var(--sage-600); transition: all 0.3s ease; position: relative; display: flex; align-items: center; text-decoration: none; background: #FFFFFF; padding: 10px; border-radius: 50%; border: 1px solid var(--sage-50); box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
-.header-icons a:hover { color: var(--sage-900); background: var(--sage-50); transform: translateY(-2px); border-color: var(--sage-100); }
-.header-icons svg { width: 20px; height: 20px; }
-.avatar-header-sm { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px; }
-
-.nav-tabs { display: flex; justify-content: center; gap: 8px; max-width: 1200px; margin: 0 auto; padding: 0 32px; }
-.nav-tab { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 28px; text-decoration: none; color: var(--sage-600); font-size: 13px; font-weight: 600; transition: all 0.3s ease; position: relative; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
-.nav-tab svg { width: 20px; height: 20px; stroke-width: 2.2; }
-.nav-tab:hover { color: var(--sage-800); background: rgba(255, 255, 255, 0.6); }
-.nav-tab.active { color: var(--sage-900); background: #FFFFFF; }
-.nav-tab.active::after { content: ''; position: absolute; bottom: 0; left: 15%; width: 70%; height: 3px; background: var(--sage-500); border-radius: 4px 4px 0 0; }
-
-.container { max-width: 1100px; margin: 0 auto; padding: 40px 32px; position: relative; z-index: 1; }
-.card { background: #fff; border: 1px solid var(--sage-50); border-radius: var(--radius-lg); padding: 36px; box-shadow: var(--shadow-sm); margin-bottom: 24px; }
-.btn-yellow { background: var(--sage-500); color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 50px; padding: 11px 18px; font-size: 13px; font-weight: 800; cursor: pointer; text-decoration: none; transition: 0.3s; box-shadow: 0 4px 12px rgba(109, 140, 109, 0.3); }
-.btn-yellow:hover { background: var(--sage-600); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(109, 140, 109, 0.4); }
-.form-control { width: 100%; padding: 14px 16px; border: 1px solid var(--sage-100); background: var(--sage-body); border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; outline: none; transition: 0.3s; }
-.form-control:focus { border-color: var(--sage-500); background: #fff; box-shadow: 0 0 0 4px rgba(109, 140, 109, 0.1); }
-.class-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; margin-top: 16px; }
-.class-card { background: var(--bg-card); border: 1px solid var(--sage-50); border-radius: var(--radius-md); padding: 28px; box-shadow: var(--shadow-sm); transition: all 0.4s ease; display: flex; flex-direction: column; }
-.class-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(109, 140, 109, 0.12); border-color: var(--sage-100); }
-
-/* Styling Quiz */
-.quiz-container { max-width: 800px; margin: 0 auto; text-align: center; }
-.quiz-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: var(--sage-50); padding: 12px 24px; border-radius: 50px; font-weight: 800; color: var(--sage-800); }
-.timer-badge { display: inline-flex; align-items: center; gap: 8px; background: #E07A5F; color: #fff; padding: 8px 16px; border-radius: 50px; font-size: 14px; transition: 0.3s; }
-.timer-badge.reading { background: #CD7F32; }
-.score-badge { font-weight: 900; color: #CD7F32; font-size: 18px; display: flex; align-items: center; gap: 6px; }
-.soal-text { font-size: 22px; font-weight: 800; color: var(--sage-900); margin-bottom: 30px; line-height: 1.4; }
-.opsi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.btn-opsi { background: #fff; border: 2px solid var(--sage-100); border-radius: 12px; padding: 20px; font-size: 16px; font-weight: 700; color: var(--sage-800); cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 12px; text-align: left; }
-.btn-opsi:disabled { cursor: not-allowed; }
-.btn-opsi:not(:disabled):hover { border-color: var(--sage-500); background: var(--sage-50); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-.opsi-label { display: inline-flex; justify-content: center; align-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--sage-100); color: var(--sage-800); font-weight: 800; }
-
-.feedback-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; color: white; animation: popIn 0.3s forwards; }
-.feedback-overlay.correct { background-color: #2E7D32; }
-.feedback-overlay.wrong { background-color: #C62828; }
-.feedback-overlay h1 { font-size: 70px; font-weight: 900; margin-bottom: 10px; text-shadow: 0 4px 10px rgba(0,0,0,0.2); }
-.feedback-overlay p { font-size: 22px; font-weight: 700; background: rgba(0,0,0,0.2); padding: 12px 24px; border-radius: 50px; text-align: center; }
-.feedback-overlay .correct-ans-box { background: #fff; color: #C62828; padding: 12px 24px; border-radius: 12px; font-size: 18px; font-weight: 800; margin-top: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
-
-/* ================= TAMBAHAN CSS NAV DROPDOWN & MODAL PANDUAN ================= */
-.dropdown { position: relative; }
-.dropdown-content {
-    display: none;
-    position: absolute;
-    right: 0;
-    top: 55px;
-    background-color: #FFFFFF;
-    min-width: 200px;
-    box-shadow: var(--shadow-md);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--sage-100);
-    z-index: 100;
-    overflow: hidden;
-}
-.dropdown-content a {
-    color: var(--sage-800);
-    padding: 14px 18px;
-    text-decoration: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 13px;
-    font-weight: 700;
-    border-bottom: 1px solid var(--sage-50);
-    background: transparent;
-    border-radius: 0;
-    box-shadow: none;
-    width: 100%;
-    height: auto;
-}
-.dropdown-content a:last-child { border-bottom: none; }
-.dropdown-content a:hover {
-    background-color: var(--sage-50);
-    transform: none;
-    border-color: var(--sage-50);
-}
-.dropdown-content .badge-notif {
-    background: #E07A5F;
-    color: white;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 10px;
-}
-.show-dropdown { display: block; }
-
-/* Modal Panduan Styles */
-.modal-overlay {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0; top: 0;
-    width: 100%; height: 100%;
-    background-color: rgba(29, 38, 29, 0.6);
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(4px);
-}
-.modal-content {
-    background-color: #fff;
-    padding: 30px;
-    border-radius: var(--radius-md);
-    max-width: 500px;
-    width: 90%;
-    box-shadow: var(--shadow-lg);
-    animation: modalFadeIn 0.3s ease-out;
-}
-@keyframes modalFadeIn {
-    from { transform: translateY(-20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-    border-bottom: 2px dashed var(--sage-100);
-    padding-bottom: 16px;
-}
-.modal-header h3 { color: var(--sage-900); font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
-.close-btn {
-    background: var(--sage-50);
-    border: none;
-    width: 32px; height: 32px;
-    border-radius: 50%;
-    font-size: 20px;
-    cursor: pointer;
-    color: var(--sage-800);
-    display: flex; align-items: center; justify-content: center;
-    transition: 0.2s;
-}
-.close-btn:hover { background: #E07A5F; color: #fff; }
-.modal-body ul { list-style: none; padding-left: 0; }
-.modal-body li {
-    margin-bottom: 14px;
-    font-size: 13.5px;
-    color: var(--sage-600);
-    line-height: 1.6;
-    padding-left: 28px;
-    position: relative;
-}
-.modal-body li::before {
-    content: '✅';
-    position: absolute;
-    left: 0;
-    font-size: 14px;
-    top: 2px;
-}
-.modal-body li strong { color: var(--sage-900); font-weight: 800; }
-
-@keyframes popIn { 0% { transform: scale(0.8); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-@keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-@keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
-@media (max-width: 768px) { .header-top { flex-wrap: wrap; gap: 16px; } .nav-tabs { overflow-x: auto; justify-content: flex-start; padding: 0 16px; } .opsi-grid { grid-template-columns: 1fr; } }
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+:root{--yellow:#fff8d6;--sage:#6d8c6d;--sage-dark:#577357;--sage-light:#e8f0e8;--ink:#263326;--muted:#687968;--line:#dce7dc}
+*{box-sizing:border-box}body{margin:0;background:#f4f7f5;color:var(--ink);font-family:'Plus Jakarta Sans',Arial,sans-serif}
+a{color:inherit;text-decoration:none}.header{background:linear-gradient(180deg,var(--yellow),#fff);border-bottom:1px solid #eee5bd;position:sticky;top:0;z-index:5}
+.header-top{max-width:1150px;margin:auto;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;gap:15px}
+.logo{font-size:22px;font-weight:800;color:#2f402f}.logo span{font-size:12px;background:var(--sage-light);padding:5px 10px;border-radius:30px;color:var(--sage)}
+.header-actions{display:flex;gap:10px;align-items:center}.header-actions a{padding:9px 13px;border-radius:30px;background:#fff;border:1px solid var(--line);font-size:13px;font-weight:700}
+.nav{max-width:1150px;margin:auto;padding:0 16px;display:flex;gap:5px;overflow-x:auto}.nav a{padding:13px 16px;font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap;border-radius:10px 10px 0 0}.nav a.active,.nav a:hover{background:#fff;color:var(--ink);border-bottom:3px solid var(--sage)}
+.container{max-width:1100px;margin:30px auto;padding:0 22px 60px}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:25px;margin-bottom:18px;box-shadow:0 5px 18px #6d8c6d0c}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.stat{display:flex;gap:15px;align-items:center}.stat-icon{font-size:25px;background:var(--yellow);padding:15px;border-radius:14px}.muted{color:var(--muted);font-size:13px}.btn{display:inline-block;background:var(--sage);color:#fff;border:0;border-radius:30px;padding:11px 17px;font-weight:800;font-size:13px;cursor:pointer}.btn:hover{background:var(--sage-dark)}.btn-light{background:#fff;color:var(--sage-dark);border:1px solid var(--line)}
+input,select,textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fbfdfb;margin:6px 0 14px}label{font-size:13px;font-weight:700}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;border-bottom:1px solid var(--line);font-size:13px}
+.alert{padding:13px 16px;border-radius:12px;margin-bottom:18px;background:#e8f5e9;color:#28652d}.alert.error{background:#ffefed;color:#a43b30}
+.badge{display:inline-block;padding:5px 10px;border-radius:30px;background:var(--yellow);font-size:11px;font-weight:800}
+@media(max-width:600px){.header-top{padding:14px}.container{padding:0 13px}.card{padding:18px}.header-actions a{font-size:11px;padding:8px}}
 </style>
 </head>
 <body>
-
 <header class="header">
   <div class="header-top">
-    <a href="murid.php?page=beranda" class="logo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-      Slearning <span style="font-size: 14px; font-weight: 600; color: var(--sage-500); margin-left: 8px; background: var(--sage-50); padding: 4px 10px; border-radius: 50px;">Siswa</span>
-    </a>
-    
-    <?php if($page !== 'kerjakan_quiz'): ?>
-    <div class="header-icons">
-      <!-- Tombol Buku Panduan -->
-      <a href="#" onclick="bukaPanduan(event)" title="Buku Panduan Penggunaan">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-      </a>
-
-      <!-- Menu 3 Titik (Kebab Menu) -->
-      <div class="dropdown">
-        <a href="#" onclick="toggleDropdown(event)" title="Menu Lanjutan">
-          <?php if($jml_notif > 0): ?>
-            <div style="position:absolute; top:-2px; right:-2px; width:10px; height:10px; background:#E07A5F; border-radius:50%; border:2px solid #fff;"></div>
-          <?php endif; ?>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
-        </a>
-        
-        <div id="menuLanjutan" class="dropdown-content">
-          <a href="murid.php?page=notif">
-            Pemberitahuan 
-            <?php if($jml_notif > 0): ?><span class="badge-notif"><?= $jml_notif ?></span><?php endif; ?>
-          </a>
-          <a href="murid.php?page=profil">Pengaturan Profil</a>
-          <a href="murid.php?page=laporan" style="color: #CD7F32;">🚩 Lapor Pelanggaran</a>
-          <a href="logout.php" onclick="return confirm('Keluar dari Slearning?')" style="color: #E07A5F;">Keluar Akun</a>
-        </div>
-      </div>
+    <a class="logo" href="murid.php">SLearning <span>Murid</span></a>
+    <div class="header-actions">
+      <a href="murid.php?page=profil"><?= e($nama_murid) ?></a>
+      <a href="logout.php" onclick="return confirm('Keluar dari SLearning?')">Keluar</a>
     </div>
+  </div>
+  <nav class="nav">
+    <?php
+    $menu = ['beranda'=>'Beranda','kelas'=>'Kelas','absensi'=>'Absensi','tugas'=>'Tugas','quiz'=>'Quiz','notif'=>'Notifikasi','laporan'=>'Laporan','profil'=>'Profil'];
+    foreach ($menu as $key=>$label):
+    ?>
+      <a class="<?= $page===$key?'active':'' ?>" href="murid.php?page=<?= e($key) ?>"><?= e($label) ?></a>
+    <?php endforeach; ?>
+  </nav>
+</header>
+<main class="container">
+<?php if ($flash): ?>
+  <div class="alert <?= ($flash['tipe'] ?? '')==='error'?'error':'' ?>"><?= e($flash['pesan']) ?></div>
+<?php endif; ?>
+
+<?php if ($page === 'kelas'): ?>
+  <section class="card">
+    <h2>Kelas Saya</h2>
+    <p class="muted">Masukkan kode gabung dari guru untuk meminta izin masuk kelas.</p>
+    <form method="post">
+      <label>Kode Gabung</label><input name="kode_gabung" placeholder="Masukkan kode kelas" required>
+      <button class="btn" name="gabung_kelas">Gabung Kelas</button>
+    </form>
+  </section>
+  <div class="grid">
+  <?php if (!$kelasSaya): ?><div class="card">Kamu belum bergabung dengan kelas mana pun.</div><?php endif; ?>
+  <?php foreach ($kelasSaya as $k): ?>
+    <div class="card">
+      <span class="badge"><?= e(ucfirst($k['status_izin'] ?? 'disetujui')) ?></span>
+      <h3><?= e($k['nama_kelas']) ?></h3><p class="muted">Guru: <?= e($k['nama_guru'] ?? '-') ?></p>
+      <a class="btn" href="murid.php?page=detail_kelas&id=<?= (int)$k['id'] ?>">Lihat Kelas</a>
+    </div>
+  <?php endforeach; ?>
+  </div>
+
+<?php elseif ($page === 'detail_kelas'): ?>
+  <?php
+  $kid=(int)($_GET['id']??0);
+  $detail=stmt_row($koneksi,"SELECT k.*,l.nama nama_guru,COALESCE(ak.status,'disetujui') status_izin FROM kelas k JOIN anggota_kelas ak ON ak.kelas_id=k.id LEFT JOIN login l ON l.id=k.guru_id WHERE k.id=? AND ak.user_id=?",'ii',[$kid,$uid]);
+  ?>
+  <div class="card">
+  <?php if (!$detail): ?><h2>Kelas tidak ditemukan</h2>
+  <?php elseif ($detail['status_izin']==='pending'): ?>
+    <h2>⏳ Sedang Menunggu Izin Guru</h2><p>Permintaan bergabung ke kelas <b><?= e($detail['nama_kelas']) ?></b> sudah dikirim. Tunggu persetujuan guru.</p>
+    <a class="btn btn-light" href="murid.php?page=kelas">Kembali</a>
+  <?php elseif ($detail['status_izin']==='ditolak'): ?>
+    <h2>Permintaan Ditolak</h2><p>Guru belum menyetujui permintaan masuk kelas ini.</p><a class="btn" href="murid.php?page=kelas">Kembali</a>
+  <?php else: ?>
+    <h2><?= e($detail['nama_kelas']) ?></h2><p class="muted">Guru pengampu: <?= e($detail['nama_guru']??'-') ?></p>
+    <h3>Tugas di kelas</h3>
+    <?php $daftar=stmt_rows($koneksi,"SELECT id,judul_tugas,deadline FROM tugas WHERE kelas_id=? ORDER BY id DESC",'i',[$kid]); ?>
+    <?php if (!$daftar): ?><p class="muted">Belum ada tugas.</p><?php else: foreach($daftar as $t): ?>
+      <p><?= e($t['judul_tugas']) ?> — <?= e(tanggal_id($t['deadline']??'',false)) ?></p>
+    <?php endforeach; endif; ?>
+  <?php endif; ?>
+  </div>
+
+<?php elseif ($page === 'absensi'): ?>
+  <div class="card"><h2>Absensi Kehadiran</h2>
+  <?php $absen=$inKelas!=='0'?stmt_rows($koneksi,"SELECT a.id,a.judul_absensi,a.tanggal,k.nama_kelas,ah.status FROM absensi a JOIN kelas k ON k.id=a.kelas_id LEFT JOIN absensi_hadir ah ON ah.absensi_id=a.id AND ah.user_id=? WHERE a.kelas_id IN ($inKelas) ORDER BY a.tanggal DESC",'i',[$uid]):[]; ?>
+  <?php if (!$absen): ?><p class="muted">Belum ada sesi absensi.</p><?php else: foreach($absen as $a): ?>
+    <div style="padding:14px 0;border-bottom:1px solid var(--line)"><b><?= e($a['judul_absensi']) ?></b><p class="muted"><?= e($a['nama_kelas']) ?> · <?= e(tanggal_id($a['tanggal'])) ?></p>
+    <?php if ($a['status']): ?><span class="badge">Sudah absen: <?= e($a['status']) ?></span><?php else: ?>
+      <form method="post"><input type="hidden" name="absensi_id" value="<?= (int)$a['id'] ?>"><select name="status"><option value="hadir">Hadir</option><option value="izin">Izin</option><option value="sakit">Sakit</option></select><button class="btn" name="isi_absen">Kirim Absen</button></form>
+    <?php endif; ?></div>
+  <?php endforeach; endif; ?></div>
+
+<?php elseif ($page === 'tugas'): ?>
+  <div class="card"><h2>Daftar Tugas</h2>
+  <?php $tugas=$inKelas!=='0'?stmt_rows($koneksi,"SELECT t.id,t.judul_tugas,t.deadline,k.nama_kelas,pt.nama_file FROM tugas t JOIN kelas k ON k.id=t.kelas_id LEFT JOIN pengumpulan_tugas pt ON pt.tugas_id=t.id AND pt.user_id=? WHERE t.kelas_id IN ($inKelas) ORDER BY t.deadline ASC",'i',[$uid]):[]; ?>
+  <?php if (!$tugas): ?><p class="muted">Belum ada tugas tersedia.</p><?php else: foreach($tugas as $t): ?>
+    <div style="padding:14px 0;border-bottom:1px solid var(--line)"><b><?= e($t['judul_tugas']) ?></b><p class="muted"><?= e($t['nama_kelas']) ?> · Deadline: <?= e(tanggal_id($t['deadline']??'',false)) ?></p>
+    <span class="badge"><?= $t['nama_file']?'Sudah dikumpulkan':'Belum dikumpulkan' ?></span>
+    <form method="post" enctype="multipart/form-data"><input type="hidden" name="tugas_id" value="<?= (int)$t['id'] ?>"><input type="file" name="file_tugas" required><button class="btn" name="kumpulkan_tugas">Kumpulkan Tugas</button></form></div>
+  <?php endforeach; endif; ?></div>
+
+<?php elseif ($page === 'quiz'): ?>
+  <div class="card"><h2>Quiz Tersedia</h2>
+  <?php $quiz=$inKelas!=='0'?stmt_rows($koneksi,"SELECT q.id,q.judul,k.nama_kelas FROM quiz q JOIN kelas k ON k.id=q.kelas_id WHERE q.kelas_id IN ($inKelas) ORDER BY q.id DESC"):[]; ?>
+  <?php if (!$quiz): ?><p class="muted">Belum ada quiz tersedia.</p><?php else: foreach($quiz as $q): ?>
+    <div style="padding:12px 0;border-bottom:1px solid var(--line)"><b><?= e($q['judul']) ?></b><p class="muted"><?= e($q['nama_kelas']) ?></p><a class="btn" href="murid.php?page=kerjakan_quiz&quiz_id=<?= (int)$q['id'] ?>">Buka Quiz</a></div>
+  <?php endforeach; endif; ?></div>
+
+<?php elseif ($page === 'kerjakan_quiz'): ?>
+  <?php
+  $quizDetail = $quizId > 0 ? stmt_row($koneksi, "SELECT q.*,k.nama_kelas FROM quiz q JOIN kelas k ON k.id=q.kelas_id JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE q.id=? AND ak.user_id=? AND COALESCE(ak.status,'disetujui')='disetujui' LIMIT 1", 'ii', [$quizId,$uid]) : null;
+  ?>
+  <div class="card">
+    <?php if (!$quizDetail): ?>
+      <h2>Quiz tidak ditemukan</h2><p class="muted">Quiz tidak tersedia atau kamu belum mendapat izin masuk kelas.</p>
+    <?php else: ?>
+      <h2><?= e($quizDetail['judul'] ?? 'Quiz') ?></h2>
+      <p class="muted">Kelas: <?= e($quizDetail['nama_kelas']) ?></p>
+      <p>Quiz ini terdaftar di kelas yang kamu ikuti. Tampilan pengerjaan soal perlu disesuaikan dengan struktur tabel soal dan jawaban pada database proyek.</p>
+      <a class="btn btn-light" href="murid.php?page=quiz">Kembali ke daftar quiz</a>
     <?php endif; ?>
   </div>
 
-  <?php if($page !== 'kerjakan_quiz'): ?>
-  <nav class="nav-tabs">
-    <a href="murid.php?page=beranda" class="nav-tab <?= $page==='beranda'?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> <span>Beranda</span></a>
-    <a href="murid.php?page=kelas" class="nav-tab <?= ($page==='kelas' || $page==='detail_kelas')?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg> <span>Kelas</span></a>
-    <a href="murid.php?page=absensi" class="nav-tab <?= $page==='absensi'?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 16 2 2 4-4"/></svg> <span>Absensi</span></a>
-    <a href="murid.php?page=tugas" class="nav-tab <?= ($page==='tugas' || $page==='detail_tugas')?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> <span>Tugas</span></a>
-    <a href="murid.php?page=quiz" class="nav-tab <?= ($page==='quiz' || $page==='kerjakan_quiz')?'active':'' ?>"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="9" y1="10" x2="9.01" y2="10"/></svg> <span>Quiz</span></a>
-  </nav>
-  <?php endif; ?>
-</header>
+<?php elseif ($page === 'notif' || $page === 'notifikasi'): ?>
+  <div class="card"><h2>Pemberitahuan</h2>
+  <?php if (!$notifikasi): ?><p class="muted">Belum ada pemberitahuan baru.</p><?php else: foreach($notifikasi as $n): ?>
+    <p><span class="badge"><?= e(strtoupper($n['tipe'])) ?></span> <?= e($n['judul']) ?> <span class="muted"><?= e(tanggal_id($n['tanggal'])) ?></span></p>
+  <?php endforeach; endif; ?></div>
 
-<main class="container">
-  <?php 
-  switch($page): 
+<?php elseif ($page === 'profil'): ?>
+  <div class="card"><h2>Pengaturan Profil</h2>
+  <form method="post" enctype="multipart/form-data">
+    <label>Nama</label><input name="nama" value="<?= e($user['nama']) ?>" required>
+    <label>Email</label><input type="email" name="email" value="<?= e($user['email']) ?>" required>
+    <label>Foto Profil</label><input type="file" name="foto" accept=".jpg,.jpeg,.png,.gif">
+    <label>Password Lama (isi jika ingin mengganti password)</label><input type="password" name="password_lama">
+    <label>Password Baru</label><input type="password" name="password_baru" minlength="8">
+    <button class="btn" name="update_profil">Simpan Profil</button>
+  </form></div>
 
-      case 'laporan': 
-  ?>
-      <div class="card" style="max-width: 800px; margin: 0 auto;">
-          <h2 style="font-size:22px; margin-bottom:6px; font-weight:800; color:var(--sage-800);">🚩 Lapor Pelanggaran</h2>
-          <p style="font-size:13.5px; color:var(--sage-600); margin-bottom:24px;">Laporkan murid atau guru yang melakukan pelanggaran atau tindakan tidak pantas. Laporan ini bersifat rahasia dan hanya dibaca oleh Admin / Bimbingan Konseling.</p>
-          
-          <form method="POST" action="murid.php?page=laporan" style="background:#FAFCFA; border:1px solid var(--sage-100); padding:24px; border-radius:var(--radius-md); margin-bottom:30px;">
-              <div style="margin-bottom:16px;">
-                  <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px; color:var(--sage-800);">Pilih Pengguna yang Dilaporkan</label>
-                  <select name="terlapor_id" class="form-control" required style="cursor:pointer;">
-                      <option value="" disabled selected>-- Pilih Guru atau Murid --</option>
-                      <optgroup label="👨‍🏫 Daftar Guru">
-                          <?php
-                          $q_guru = mysqli_query($koneksi, "SELECT id, nama FROM login WHERE jenis='guru' ORDER BY nama ASC");
-                          while($g = mysqli_fetch_assoc($q_guru)) {
-                              echo '<option value="'.$g['id'].'">'.e($g['nama']).' (Guru)</option>';
-                          }
-                          ?>
-                      </optgroup>
-                      <optgroup label="🎓 Daftar Murid">
-                          <?php
-                          $q_murid = mysqli_query($koneksi, "SELECT id, nama FROM login WHERE jenis='murid' AND id != $uid ORDER BY nama ASC");
-                          while($m = mysqli_fetch_assoc($q_murid)) {
-                              echo '<option value="'.$m['id'].'">'.e($m['nama']).' (Murid)</option>';
-                          }
-                          ?>
-                      </optgroup>
-                  </select>
-              </div>
-              
-              <div style="margin-bottom:16px;">
-                  <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px; color:var(--sage-800);">Kategori Laporan</label>
-                  <select name="kategori" class="form-control" required style="cursor:pointer;">
-                      <option value="" disabled selected>-- Pilih Kategori Pelanggaran --</option>
-                      <option value="Perkataan Kasar / Bullying">Perkataan Kasar / Bullying / Cyberbullying</option>
-                      <option value="Pelecehan / Tindak Kekerasan">Pelecehan / Tindak Kekerasan</option>
-                      <option value="Kecurangan / Menyontek">Kecurangan / Menyontek (Sesama Murid)</option>
-                      <option value="Sikap Tidak Profesional">Sikap Tidak Profesional (Guru)</option>
-                      <option value="Lainnya">Lainnya</option>
-                  </select>
-              </div>
-              
-              <div style="margin-bottom:24px;">
-                  <label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px; color:var(--sage-800);">Keterangan Lengkap Kejadian</label>
-                  <textarea name="deskripsi" class="form-control" rows="4" placeholder="Ceritakan secara detail apa yang terjadi, kapan, dan di mana..." required style="resize:vertical;"></textarea>
-              </div>
-              
-              <button type="submit" name="kirim_laporan" class="btn-yellow" style="width:100%; padding:14px; background:#E07A5F; font-size:14px; box-shadow:0 4px 12px rgba(224, 122, 95, 0.3);">Kirim Laporan</button>
-          </form>
+<?php elseif ($page === 'laporan'): ?>
+  <div class="card"><h2>🚩 Lapor Pelanggaran</h2>
+  <p class="muted">Laporan akan diteruskan kepada pengelola sekolah.</p>
+  <form method="post">
+    <label>Pengguna yang dilaporkan</label>
+    <select name="terlapor_id" required><option value="">Pilih pengguna</option>
+    <?php foreach(stmt_rows($koneksi,"SELECT id,nama,jenis FROM login WHERE jenis IN ('guru','murid') AND id<>? ORDER BY nama",'i',[$uid]) as $x): ?>
+      <option value="<?= (int)$x['id'] ?>"><?= e($x['nama']) ?> (<?= e($x['jenis']) ?>)</option>
+    <?php endforeach; ?></select>
+    <label>Kategori</label><select name="kategori" required><option value="">Pilih kategori</option><option>Perkataan Kasar / Bullying</option><option>Pelecehan / Tindak Kekerasan</option><option>Kecurangan / Menyontek</option><option>Sikap Tidak Profesional</option><option>Lainnya</option></select>
+    <label>Keterangan</label><textarea name="deskripsi" rows="4" required></textarea>
+    <button class="btn" name="kirim_laporan">Kirim Laporan</button>
+  </form>
+  <h3>Riwayat Laporan Saya</h3>
+  <?php foreach(stmt_rows($koneksi,"SELECT lp.*,l.nama,l.jenis FROM laporan_pengguna lp JOIN login l ON l.id=lp.terlapor_id WHERE lp.pelapor_id=? ORDER BY lp.created_at DESC",'i',[$uid]) as $lp): ?>
+    <p><b><?= e($lp['nama']) ?></b> — <?= e($lp['kategori']) ?> <span class="badge"><?= e($lp['status']) ?></span></p>
+  <?php endforeach; ?></div>
 
-          <h3 style="font-size:17px; margin-bottom:12px; font-weight:800; color:var(--sage-800);">Riwayat Laporan Saya</h3>
-          <?php
-          $q_lapor = mysqli_query($koneksi, "SELECT l.*, u.nama, u.jenis FROM laporan_pengguna l JOIN login u ON l.terlapor_id = u.id WHERE l.pelapor_id = $uid ORDER BY l.created_at DESC");
-          if(mysqli_num_rows($q_lapor) == 0): ?>
-              <div style="padding:30px; text-align:center; font-size:13px; color:var(--sage-600); border:1px dashed var(--sage-300); border-radius:var(--radius-md);">Kamu belum pernah mengirim laporan apa pun.</div>
-          <?php else:
-              while($l = mysqli_fetch_assoc($q_lapor)):
-                  $status_bg = $l['status'] == 'selesai' ? '#E8F5E9' : ($l['status'] == 'diproses' ? '#E3F2FD' : '#FFF3CD');
-                  $status_color = $l['status'] == 'selesai' ? '#2E7D32' : ($l['status'] == 'diproses' ? '#1565C0' : '#856404');
-          ?>
-              <div style="background:#fff; border:1px solid var(--sage-100); padding:16px; border-radius:var(--radius-sm); margin-bottom:12px;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                      <strong style="font-size:14px; color:var(--sage-900);">Melaporkan: <?= e($l['nama']) ?> (<?= ucfirst($l['jenis']) ?>)</strong>
-                      <span style="font-size:11px; font-weight:800; background:<?= $status_bg ?>; color:<?= $status_color ?>; padding:4px 10px; border-radius:50px; border:1px solid <?= $status_color ?>33;"><?= strtoupper($l['status']) ?></span>
-                  </div>
-                  <div style="font-size:13px; color:var(--sage-800); font-weight:700; margin-bottom:4px;">Kategori: <?= e($l['kategori']) ?></div>
-                  <p style="font-size:12.5px; color:var(--sage-600); line-height:1.5; margin-bottom:8px;"><?= nl2br(e($l['deskripsi'])) ?></p>
-                  <div style="font-size:11px; color:var(--sage-500); font-weight:600;">📅 Dikirim pada: <?= date('d M Y, H:i', strtotime($l['created_at'])) ?></div>
-              </div>
-          <?php endwhile; endif; ?>
-      </div>
-
-  <?php break; case 'profil_guru': 
-      $guru_id_get = (int)($_GET['id'] ?? 0);
-      $sg = mysqli_prepare($koneksi, "SELECT id, nama, username, email, jenis, foto FROM login WHERE id=? AND jenis='guru' LIMIT 1");
-      mysqli_stmt_bind_param($sg, 'i', $guru_id_get); mysqli_stmt_execute($sg);
-      $guru_info = mysqli_fetch_assoc(mysqli_stmt_get_result($sg)); mysqli_stmt_close($sg);
-  ?>
-      <a href="javascript:history.back()" class="btn-yellow" style="background:#fff; color:var(--sage-800); border:1px solid var(--sage-100); margin-bottom:16px; box-shadow:none;">&larr; Kembali</a>
-      <?php if(!$guru_info): ?>
-          <div class="card"><p style="color:red">Profil guru tidak ditemukan.</p></div>
-      <?php else: ?>
-          <div class="card" style="max-width: 600px; margin: 0 auto; text-align: center; padding: 40px;">
-              <?php if(!empty($guru_info['foto']) && file_exists($guru_info['foto'])): ?>
-                  <img src="<?= e($guru_info['foto']) ?>" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid var(--sage-500); margin-bottom: 20px; box-shadow: 0 8px 24px rgba(109,140,109,0.2);">
-              <?php else: ?>
-                  <div style="width: 120px; height: 120px; border-radius: 50%; background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 48px; font-weight: 900; margin: 0 auto 20px auto; box-shadow: 0 8px 24px rgba(109,140,109,0.2);">
-                      <?= strtoupper(substr($guru_info['nama'], 0, 1)) ?>
-                  </div>
-              <?php endif; ?>
-              
-              <span style="background: var(--nav-yellow); color: var(--sage-800); font-size: 12px; font-weight: 800; padding: 6px 16px; border-radius: 50px; text-transform: uppercase;">Guru Pengampu</span>
-              <h2 style="font-size: 26px; font-weight: 900; color: var(--sage-900); margin: 12px 0 4px;"><?= e($guru_info['nama']) ?></h2>
-              <p style="font-size: 14px; color: var(--sage-600); font-weight: 700; margin-bottom: 24px;">@<?= e($guru_info['username']) ?></p>
-
-              <div style="background: #FAFCFA; border: 1px solid var(--sage-100); border-radius: var(--radius-md); padding: 20px; text-align: left; margin-bottom: 24px;">
-                  <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 13.5px;">
-                      <span style="color: var(--sage-600); font-weight: 600;">Email Resmi:</span>
-                      <strong style="color: var(--sage-900);"><?= e($guru_info['email']) ?></strong>
-                  </div>
-                  <div style="display: flex; justify-content: space-between; font-size: 13.5px;">
-                      <span style="color: var(--sage-600); font-weight: 600;">Peran Akun:</span>
-                      <strong style="color: var(--sage-800);">Pengajar / Guru Mata Pelajaran</strong>
-                  </div>
-              </div>
-
-              <a href="murid.php?page=laporan" class="btn-yellow" style="background: #E07A5F; font-size: 13px; padding: 10px 20px;">🚩 Laporkan Guru Ini</a>
-          </div>
-      <?php endif; ?>
-
-  <?php break; case 'kelas': ?>
-      <div class="card" style="border-left:4px solid var(--sage-500)">
-          <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Manajemen & Kode Gabung Kelas</h2>
-          <p style="font-size:13px;color:var(--sage-600);margin-bottom:16px">Masukkan kode kelas dari guru untuk mengajukan bergabung.</p>
-          <form method="POST" id="form-gabung-kelas" style="display:flex;gap:12px;flex-wrap:wrap">
-              <input type="text" id="kode-gabung-input" name="kode_gabung" class="form-control" placeholder="Masukkan kode kelas, contoh KLS-XXX" required style="flex:1;min-width:200px;text-transform:uppercase">
-              <button type="submit" name="gabung_kelas" class="btn-yellow">Gabung Kelas</button>
-          </form>
-          <div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--sage-100);">
-              <p style="font-size:13px;font-weight:700;color:var(--sage-800);margin-bottom:8px;">Atau gabung dengan QR dari galeri</p>
-              <p style="font-size:12px;color:var(--sage-600);margin-bottom:12px;line-height:1.6;">Pilih gambar QR kelas yang sudah disimpan di galeri HP atau komputer. Kode akan dibaca otomatis.</p>
-              <label for="qr-galeri-input" class="btn-yellow" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;">
-                  🖼️ Pilih QR dari Galeri
-              </label>
-              <input type="file" id="qr-galeri-input" accept="image/*" style="display:none">
-              <div id="qr-galeri-status" role="status" style="font-size:12px;color:var(--sage-600);margin-top:10px;"></div>
-          </div>
-      </div>
-
-      <h3 style="font-size:18px;margin:30px 0 16px;font-weight:800;color:var(--sage-800);display:flex;align-items:center;gap:10px;"><span style="display:block;width:8px;height:24px;background:var(--sage-500);border-radius:4px;"></span> Daftar Kelas Saya</h3>
-      <?php if (empty($daftar_kelas)): ?>
-          <div style="padding:40px 20px;background:#fff;border:1px dashed var(--sage-300);border-radius:var(--radius-lg);text-align:center;font-size:14px;color:var(--sage-600)">Belum ada pengajuan atau kelas yang diikuti.</div>
-      <?php else: ?>
-          <div class="class-grid">
-              <?php foreach ($daftar_kelas as $kls): 
-                  $status_izin = $kls['status_izin'] ?? 'disetujui';
-              ?>
-              <article class="class-card">
-                  <div style="display:flex; align-items:center; gap:14px; margin-bottom:16px;">
-                      <div style="width:48px;height:48px;background:var(--sage-50);border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--sage-600); border: 1px solid var(--sage-100);">
-                          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-                      </div>
-                      <div>
-                          <h4 style="font-size:17px;font-weight:800;color:var(--sage-800);margin-bottom:4px"><?= e($kls['nama_kelas']) ?></h4>
-                          <p style="font-size:12.5px;color:var(--sage-600);font-weight:600;">Guru: <?= e($kls['nama_guru'] ?? 'Guru Pengampu') ?></p>
-                      </div>
-                  </div>
-                  
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                      <div style="background:var(--nav-yellow);border:1px dashed #E2D38A;padding:6px 12px;border-radius:var(--radius-sm);font-size:12px;font-weight:700;color:var(--sage-800);font-family:monospace;">Kode: <?= e($kls['kode_gabung']) ?></div>
-                      
-                      <?php if($status_izin === 'disetujui'): ?>
-                          <span style="font-size:11px; font-weight:800; background:#E8F5E9; color:#2E7D32; padding:4px 10px; border-radius:50px; border:1px solid #C8E6C9;">Tergabung</span>
-                      <?php elseif($status_izin === 'pending'): ?>
-                          <span style="font-size:11px; font-weight:800; background:#FFF3CD; color:#856404; padding:4px 10px; border-radius:50px; border:1px solid #FFEEBA;">⏳ Menunggu Izin</span>
-                      <?php else: ?>
-                          <span style="font-size:11px; font-weight:800; background:#FFEBEE; color:#C62828; padding:4px 10px; border-radius:50px; border:1px solid #FFCDD2;">❌ Ditolak</span>
-                      <?php endif; ?>
-                  </div>
-
-                  <div>
-                      <?php if($status_izin === 'disetujui'): ?>
-                          <a href="murid.php?page=detail_kelas&id=<?= (int)$kls['id'] ?>" class="btn-yellow" style="width:100%; font-size:12px; padding:10px;">Buka Ruang Kelas</a>
-                      <?php elseif($status_izin === 'pending'): ?>
-                          <a href="murid.php?page=detail_kelas&id=<?= (int)$kls['id'] ?>" class="btn-yellow" style="width:100%; font-size:12px; padding:10px; background:#E2D38A; color:var(--sage-900);">Sedang Menunggu Izin</a>
-                      <?php else: ?>
-                          <a href="murid.php?page=detail_kelas&id=<?= (int)$kls['id'] ?>" class="btn-yellow" style="width:100%; font-size:12px; padding:10px; background:#F4E3E0; color:#C62828; box-shadow:none;">Lihat Status</a>
-                      <?php endif; ?>
-                  </div>
-              </article>
-              <?php endforeach; ?>
-          </div>
-      <?php endif; ?>
-
-  <?php 
-      break; 
-      case 'detail_kelas':
-          $kid = (int)($_GET['id'] ?? 0);
-          $s = mysqli_prepare($koneksi, "SELECT k.*, k.guru_id, (SELECT nama FROM login l WHERE l.id=k.guru_id) AS nama_guru, (SELECT foto FROM login l WHERE l.id=k.guru_id) AS foto_guru, COALESCE(ak.status, 'disetujui') AS status_izin FROM kelas k JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE k.id=? AND ak.user_id=? LIMIT 1");
-          mysqli_stmt_bind_param($s, 'ii', $kid, $uid); mysqli_stmt_execute($s);
-          $kelas_detail = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-  ?>
-      <a href="murid.php?page=kelas" class="btn-yellow" style="background:#fff; color:var(--sage-800); border:1px solid var(--sage-100); margin-bottom:16px; box-shadow:none;">&larr; Kembali ke Daftar Kelas</a>
-      
-      <?php if(!$kelas_detail): ?>
-          <div class="card"><p style="color:red">Kelas tidak ditemukan atau Anda belum berinisiatif mengajukan masuk ke kelas ini.</p></div>
-      
-      <?php elseif($kelas_detail['status_izin'] === 'pending'): ?>
-          <!-- LANDING PAGE: SEDANG MENUNGGU IZIN GURU -->
-          <div class="card" style="max-width:700px; margin:20px auto; text-align:center; padding:50px 30px; background: linear-gradient(135deg, #FFFDF6 0%, #FFFFFF 100%); border:2px dashed var(--nav-yellow-dark);">
-              <div style="width:90px; height:90px; border-radius:50%; background:var(--nav-yellow); color:var(--sage-800); display:flex; align-items:center; justify-content:center; font-size:42px; margin:0 auto 24px auto; animation: pulse 2s infinite; box-shadow:0 8px 24px rgba(242, 231, 181, 0.6);">
-                  ⏳
-              </div>
-              <span style="background:#FFF3CD; color:#856404; font-size:12px; font-weight:800; padding:6px 16px; border-radius:50px; text-transform:uppercase; letter-spacing:0.5px;">Permintaan Terkirim</span>
-              <h2 style="font-size:26px; font-weight:900; color:var(--sage-900); margin:16px 0 8px;">Sedang Menunggu Izin Guru</h2>
-              <p style="font-size:14.5px; color:var(--sage-600); max-width:520px; margin:0 auto 28px; line-height:1.6;">
-                  Permintaan kamu untuk bergabung ke kelas <strong><?= e($kelas_detail['nama_kelas']) ?></strong> sudah diterima oleh sistem. Guru pengampu belum memberikan persetujuan izin masuk.
-              </p>
-
-              <div style="background:#FAFCFA; border:1px solid var(--sage-100); border-radius:var(--radius-md); padding:20px 24px; text-align:left; max-width:480px; margin:0 auto 28px;">
-                  <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:13.5px;">
-                      <span style="color:var(--sage-600); font-weight:600;">Nama Kelas:</span>
-                      <strong style="color:var(--sage-900);"><?= e($kelas_detail['nama_kelas']) ?></strong>
-                  </div>
-                  <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-size:13.5px;">
-                      <span style="color:var(--sage-600); font-weight:600;">Guru Pengampu:</span>
-                      <strong style="color:var(--sage-900);"><?= e($kelas_detail['nama_guru'] ?? 'Guru Pengampu') ?></strong>
-                  </div>
-                  <div style="display:flex; justify-content:space-between; font-size:13.5px;">
-                      <span style="color:var(--sage-600); font-weight:600;">Kode Gabung:</span>
-                      <strong style="font-family:monospace; color:var(--sage-800); background:var(--nav-yellow); padding:2px 8px; border-radius:4px;"><?= e($kelas_detail['kode_gabung']) ?></strong>
-                  </div>
-              </div>
-
-              <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap;">
-                  <button onclick="window.location.reload();" class="btn-yellow" style="padding:12px 24px; font-size:13px;">
-                      🔄 Cek Status Persetujuan
-                  </button>
-                  <a href="murid.php?page=kelas" class="btn-yellow" style="background:#fff; color:var(--sage-800); border:1px solid var(--sage-100); padding:12px 24px; font-size:13px; box-shadow:none;">
-                      &larr; Kembali ke Daftar Kelas
-                  </a>
-              </div>
-          </div>
-
-          <script>
-          // Auto-refresh setiap 7 detik untuk mengecek apakah guru sudah menyetujui
-          setTimeout(function() {
-              window.location.reload();
-          }, 7000);
-          </script>
-
-      <?php elseif($kelas_detail['status_izin'] === 'ditolak'): ?>
-          <!-- LANDING PAGE: PERMINTAAN DITOLAK -->
-          <div class="card" style="max-width:600px; margin:20px auto; text-align:center; padding:50px 30px;">
-              <div style="width:80px; height:80px; border-radius:50%; background:#FFEBEE; color:#C62828; display:flex; align-items:center; justify-content:center; font-size:38px; margin:0 auto 20px auto;">
-                  ❌
-              </div>
-              <h2 style="font-size:24px; font-weight:900; color:#C62828; margin-bottom:8px;">Permintaan Ditolak</h2>
-              <p style="font-size:14px; color:var(--sage-600); margin-bottom:28px; line-height:1.6;">
-                  Maaf, guru pengampu menolak pengajuan bergabung kamu untuk kelas <strong><?= e($kelas_detail['nama_kelas']) ?></strong>. Silakan hubungi guru yang bersangkutan.
-              </p>
-              <a href="murid.php?page=kelas" class="btn-yellow">Kembali ke Daftar Kelas</a>
-          </div>
-
-      <?php else: ?>
-          <!-- RUANG KELAS UTAMA (HANYA DITAMPILKAN JIKA DISETUJUI) -->
-          <div class="card" style="background:linear-gradient(135deg,var(--sage-50),#fff)">
-              <h2 style="font-size:24px; color:var(--sage-800); margin-bottom:12px; font-weight:900;"><?= e($kelas_detail['nama_kelas']) ?></h2>
-              
-              <!-- Bagian Info Pengajar dengan Foto yang Dapat Ditekan -->
-              <div style="display: flex; align-items: center; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--sage-100);">
-                  <a href="murid.php?page=profil_guru&id=<?= (int)$kelas_detail['guru_id'] ?>" title="Lihat Profil Guru" style="display: flex; align-items: center; gap: 14px; text-decoration: none; transition: 0.2s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-                      <?php if(!empty($kelas_detail['foto_guru']) && file_exists($kelas_detail['foto_guru'])): ?>
-                          <img src="<?= e($kelas_detail['foto_guru']) ?>" style="width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 3px solid var(--sage-500); box-shadow: 0 4px 12px rgba(109,140,109,0.2);">
-                      <?php else: ?>
-                          <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--sage-500); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 900; box-shadow: 0 4px 12px rgba(109,140,109,0.2);">
-                              <?= strtoupper(substr($kelas_detail['nama_guru'] ?? 'G', 0, 1)) ?>
-                          </div>
-                      <?php endif; ?>
-                      
-                      <div>
-                          <span style="font-size: 11.5px; font-weight: 800; color: var(--sage-600); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 2px;">Pengajar Kelas</span>
-                          <span style="font-size: 18px; font-weight: 900; color: var(--sage-900); text-decoration: underline; text-decoration-color: var(--sage-500); text-underline-offset: 4px;"><?= e($kelas_detail['nama_guru'] ?? 'Guru Pengampu') ?></span>
-                      </div>
-                  </a>
-
-                  <div style="margin-left: auto; font-size: 13px; font-weight: 700; color: var(--sage-800); background: var(--nav-yellow); padding: 8px 14px; border-radius: var(--radius-sm); font-family: monospace; border: 1px dashed #E2D38A;">
-                      Kode: <?= e($kelas_detail['kode_gabung']) ?>
-                  </div>
-              </div>
-          </div>
-
-          <div class="card">
-              <h3 style="font-size:17px;margin-bottom:12px;font-weight:800;color:var(--sage-800);">Tugas di Kelas Ini</h3>
-              <?php
-              $t_kelas = mysqli_query($koneksi, "SELECT t.*, pt.nama_file FROM tugas t LEFT JOIN pengumpulan_tugas pt ON pt.tugas_id=t.id AND pt.user_id=$uid WHERE t.kelas_id=$kid ORDER BY t.id DESC");
-              if(mysqli_num_rows($t_kelas) === 0):
-              ?>
-              <p style="font-size:13px;color:var(--sage-600)">Belum ada tugas untuk kelas ini.</p>
-              <?php else: while($tk = mysqli_fetch_assoc($t_kelas)): ?>
-                  <div style="background:#fafafa;padding:14px;border-radius:10px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border:1px solid var(--sage-100)">
-                      <div>
-                          <strong style="font-size:14px"><?= e($tk['judul_tugas']) ?></strong>
-                          <div style="font-size:12px;color:var(--sage-600)">Deadline: <?= $tk['deadline'] ? e(tanggal_id($tk['deadline'])) : 'Tanpa Batas' ?></div>
-                      </div>
-                      <div style="display:flex;align-items:center;gap:10px">
-                          <span style="padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;background:<?= !empty($tk['nama_file'])?'#E8F5E9':'#FFF8D6' ?>;color:<?= !empty($tk['nama_file'])?'#2E7D32':'#77651F' ?>">
-                              <?= !empty($tk['nama_file']) ? 'Sudah Dikumpul' : 'Belum Kumpul' ?>
-                          </span>
-                          <a href="murid.php?page=tugas&detail_tugas=<?= $tk['id'] ?>" class="btn-yellow" style="padding:6px 12px;font-size:11px">Kelola Tugas</a>
-                      </div>
-                  </div>
-              <?php endwhile; endif; ?>
-          </div>
-      <?php endif; ?>
-
-  <?php break; case 'profil': ?>
-      <div class="card" style="max-width: 600px; margin: 0 auto;">
-          <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Pengaturan Profil</h2>
-          <form action="murid.php?page=profil" method="POST" enctype="multipart/form-data" style="margin-top:24px;">
-              <input type="hidden" name="update_profil" value="1">
-              <div style="text-align:center; margin-bottom:32px;">
-                  <?php if($foto_profil && file_exists($foto_profil)): ?><img src="<?= e($foto_profil) ?>" style="width:110px; height:110px; border-radius:50%; object-fit:cover; border:4px solid var(--sage-500); margin-bottom:12px;">
-                  <?php else: ?><div style="width:110px; height:110px; border-radius:50%; background:var(--sage-500); color:#fff; display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:900; margin:0 auto 12px auto;"><?= strtoupper(substr($nama_murid, 0, 1)) ?></div><?php endif; ?>
-                  <div><label style="font-size:13px; font-weight:700; color:var(--sage-800); cursor:pointer; background:var(--sage-50); padding:10px 20px; border-radius:50px; border:1px solid var(--sage-100); display:inline-block;">Pilih Foto Baru (JPG/PNG)<input type="file" name="foto" accept="image/png, image/jpeg, image/jpg" style="display:none;"></label></div>
-              </div>
-              <div style="margin-bottom:20px;"><label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Nama Lengkap</label><input type="text" name="nama" class="form-control" value="<?= e($nama_murid) ?>" required></div>
-              <div style="margin-bottom:32px;"><label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Alamat Email</label><input type="email" name="email" class="form-control" value="<?= e($user['email']) ?>" required></div>
-              <hr style="border:0; border-top:1px solid var(--sage-100); margin-bottom:24px;">
-              <h3 style="font-size:16px; margin-bottom:20px; font-weight:800; color:var(--sage-800);">Ubah Kata Sandi</h3>
-              <div style="margin-bottom:20px;"><label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Password Lama</label><input type="password" name="password_lama" class="form-control" placeholder="Kosongkan jika tidak diubah"></div>
-              <div style="margin-bottom:32px;"><label style="font-size:13px; font-weight:700; display:block; margin-bottom:8px;">Password Baru</label><input type="password" name="password_baru" class="form-control" placeholder="Masukkan password baru"></div>
-              <button type="submit" class="btn-yellow" style="width:100%; padding:14px;">Simpan Perubahan</button>
-          </form>
-      </div>
-
-  <?php break; case 'notif': case 'notifikasi': ?>
-      <div class="card" style="max-width: 800px; margin: 0 auto;">
-          <h2 style="font-size:22px; margin-bottom:6px; font-weight:800; color:var(--sage-800);">🔔 Pemberitahuan & Informasi Terbaru</h2>
-          <p style="font-size:13.5px; color:var(--sage-600); margin-bottom:24px;">Berikut adalah riwayat tugas dan kuis terbaru dari kelas yang telah disetujui.</p>
-          
-          <?php if(empty($notifikasi_list)): ?>
-              <div style="padding:40px; text-align:center; font-size:14px; color:var(--sage-600); border:1px dashed var(--sage-300); border-radius:var(--radius-md);">Belum ada pemberitahuan baru.</div>
-          <?php else: ?>
-              <div style="display:flex; flex-direction:column; gap:12px;">
-                  <?php foreach($notifikasi_list as $n): ?>
-                      <a href="murid.php?page=<?= $n['tipe'] === 'tugas' ? 'tugas' : 'quiz' ?>" style="text-decoration:none; display:block;">
-                          <div style="background:#FAFCFA; border:1px solid var(--sage-100); padding:18px 20px; border-radius:var(--radius-sm); transition: 0.2s;" onmouseover="this.style.borderColor='var(--sage-500)'" onmouseout="this.style.borderColor='var(--sage-100)'">
-                              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                                  <span style="font-size:11px; font-weight:800; background:<?= $n['tipe']==='tugas'?'#FFF8D6':'#E8F0E8' ?>; color:<?= $n['tipe']==='tugas'?'#856404':'var(--sage-800)' ?>; padding:3px 10px; border-radius:50px; text-transform:uppercase;"><?= $n['tipe'] === 'tugas' ? '📄 Tugas Baru' : '🎮 Quiz Baru' ?></span>
-                                  <span style="font-size:12px; color:var(--sage-600); font-weight:600;"><?= date('d M Y, H:i', strtotime($n['tanggal'])) ?></span>
-                              </div>
-                              <h4 style="font-size:16px; font-weight:800; color:var(--sage-900);"><?= e($n['judul']) ?></h4>
-                          </div>
-                      </a>
-                  <?php endforeach; ?>
-              </div>
-          <?php endif; ?>
-      </div>
-
-  <?php break; case 'absensi': ?>
-      <div class="card">
-          <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Absensi Kehadiran Murid</h2>
-          <?php 
-          $daftar_absen = []; 
-          if ($in_kelas !== '0') {
-              $q = mysqli_query($koneksi, "SELECT a.id, a.judul_absensi, a.tanggal, k.nama_kelas AS kelas, ah.status FROM absensi a JOIN kelas k ON k.id=a.kelas_id LEFT JOIN absensi_hadir ah ON ah.absensi_id=a.id AND ah.user_id=$uid WHERE a.kelas_id IN ($in_kelas) ORDER BY a.tanggal DESC LIMIT 10");
-              while($q && $r=mysqli_fetch_assoc($q)) $daftar_absen[] = $r;
-          }
-          
-          if(empty($daftar_absen)): ?>
-              <div style="padding:40px 20px;text-align:center;font-size:14px;color:var(--sage-600);border:1px dashed var(--sage-300);border-radius:var(--radius-lg);margin-top:20px;">Belum ada sesi absensi aktif dari kelas yang kamu ikuti.</div>
-          <?php else: foreach($daftar_absen as $ab): ?>
-              <div style="background:#FAFCFA;padding:20px 24px;border-radius:var(--radius-md);margin-top:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;border:1px solid var(--sage-100);">
-                  <div><strong style="font-size:16px;color:var(--sage-800);margin-bottom:4px;display:block;"><?= e($ab['judul_absensi']) ?></strong><div style="font-size:13px;color:var(--sage-600);font-weight:600;">📍 <?= e($ab['kelas']) ?> &bull; 📅 <?= e(tanggal_id($ab['tanggal'], false)) ?></div></div>
-                  <?php if($ab['status']): ?>
-                      <span style="background:#E8F5E9;color:#2E7D32;border:1px solid #C8E6C9;padding:8px 16px;border-radius:50px;font-size:12.5px;font-weight:800;">Sudah Absen (<?= ucfirst($ab['status']) ?>)</span>
-                  <?php else: ?>
-                      <form method="POST" style="display:flex;gap:6px">
-                          <input type="hidden" name="absensi_id" value="<?= $ab['id'] ?>">
-                          <select name="status" class="form-control" style="padding:10px;font-size:13px;width:100px;"><option value="hadir">Hadir</option><option value="izin">Izin</option><option value="sakit">Sakit</option></select>
-                          <button type="submit" name="isi_absen" class="btn-yellow" style="padding:10px 16px;">Kirim Absen</button>
-                      </form>
-                  <?php endif; ?>
-              </div>
-          <?php endforeach; endif; ?>
-      </div>
-
-  <?php break; case 'tugas': 
-      $detail_tugas_id = (int)($_GET['detail_tugas'] ?? 0);
-  ?>
-      <?php if($detail_tugas_id > 0): 
-          $s = mysqli_prepare($koneksi, "SELECT t.*, k.nama_kelas AS mapel, pt.nama_file, pt.dikumpulkan_at, pt.nilai, pt.feedback FROM tugas t JOIN kelas k ON k.id=t.kelas_id LEFT JOIN pengumpulan_tugas pt ON pt.tugas_id=t.id AND pt.user_id=? WHERE t.id=? LIMIT 1");
-          mysqli_stmt_bind_param($s,'ii',$uid,$detail_tugas_id); mysqli_stmt_execute($s);
-          $td = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-      ?>
-          <a href="murid.php?page=tugas" class="btn-yellow" style="background:#fff; color:var(--sage-800); border:1px solid var(--sage-100); margin-bottom:16px; box-shadow:none;">&larr; Kembali ke Daftar Tugas</a>
-          <?php if(!$td): ?><div class="card"><p style="color:red">Tugas tidak ditemukan.</p></div>
-          <?php else: ?>
-              <div class="card">
-                  <h2 style="font-size:20px;margin-bottom:4px;font-weight:800;color:var(--sage-800);"><?= e($td['judul_tugas']) ?></h2>
-                  <p style="font-size:13px;color:var(--sage-600);margin-bottom:12px"><?= e($td['mapel']) ?> • Deadline: <?= $td['deadline'] ? e(tanggal_id($td['deadline'])) : 'Tanpa batas' ?></p>
-                  <?php if(!empty($td['deskripsi'])): ?>
-                      <div style="background:#fafafa;padding:14px;border-radius:10px;font-size:13px;margin-bottom:14px;line-height:1.6;border:1px solid var(--sage-100);"><?= nl2br(e($td['deskripsi'])) ?></div>
-                  <?php endif; ?>
-
-                  <?php if(!empty($td['nama_file'])): ?>
-                      <div style="background:#E8F5E9;color:#2E7D32;padding:12px;border-radius:10px;font-size:13px;margin-bottom:14px;border:1px solid #C8E6C9;">
-                          Terkumpul: <strong><?= e($td['nama_file']) ?></strong> (<?= e(tanggal_id($td['dikumpulkan_at'])) ?>)
-                          <?php if($td['nilai']!==null) echo '<br>Nilai: <strong>'.(int)$td['nilai'].'</strong>'; ?>
-                          <?php if(!empty($td['feedback'])) echo '<br>Catatan Guru: '.e($td['feedback']); ?>
-                      </div>
-                  <?php endif; ?>
-
-                  <form method="POST" enctype="multipart/form-data" style="background:#fafafa;border:1px dashed var(--sage-300);padding:18px;border-radius:12px">
-                      <input type="hidden" name="tugas_id" value="<?= $td['id'] ?>">
-                      <label style="font-size:13px;font-weight:700;display:block;margin-bottom:8px;color:var(--sage-800);"><?= !empty($td['nama_file']) ? 'Ganti File Tugas' : 'Pilih File Tugas' ?></label>
-                      <input type="file" name="file_tugas" class="form-control" required style="background:#fff;margin-bottom:10px">
-                      <p style="font-size:12px;color:var(--sage-600);margin-bottom:12px">Maksimal 10 MB • PDF, DOC, DOCX, PPT, PPTX, ZIP, RAR, JPG, PNG.</p>
-                      <button type="submit" name="kumpulkan_tugas" class="btn-yellow"><?= !empty($td['nama_file']) ? 'Kumpulkan Ulang' : 'Kumpulkan Tugas' ?></button>
-                  </form>
-              </div>
-          <?php endif; ?>
-      <?php else: ?>
-          <div class="card">
-              <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Daftar Tugas Murid</h2>
-              <?php
-              $daftar_tugas = []; 
-              if ($in_kelas !== '0') {
-                  $q = mysqli_query($koneksi, "SELECT t.id, t.judul_tugas AS judul, t.deadline, k.nama_kelas AS mapel, pt.nama_file FROM tugas t JOIN kelas k ON k.id=t.kelas_id LEFT JOIN pengumpulan_tugas pt ON pt.tugas_id=t.id AND pt.user_id=$uid WHERE t.kelas_id IN ($in_kelas) ORDER BY t.deadline ASC LIMIT 10");
-                  while($q && $r=mysqli_fetch_assoc($q)) $daftar_tugas[] = $r;
-              }
-              
-              if(empty($daftar_tugas)): ?>
-                  <div style="padding:40px 20px;text-align:center;font-size:14px;color:var(--sage-600);border:1px dashed var(--sage-300);border-radius:var(--radius-lg);margin-top:20px;">Belum ada tugas tersedia dari kelas yang kamu ikuti.</div>
-              <?php else: foreach($daftar_tugas as $t): ?>
-                  <div style="background:#FAFCFA;padding:20px 24px;border-radius:var(--radius-md);margin-top:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;border:1px solid var(--sage-100);">
-                      <div><strong style="font-size:16px;color:var(--sage-800);margin-bottom:4px;display:block;">📄 <?= e($t['judul']) ?></strong><div style="font-size:13px;color:var(--sage-600);font-weight:600;">📍 <?= e($t['mapel']) ?> &bull; ⏳ Deadline: <?= $t['deadline'] ? e(tanggal_id($t['deadline'])) : 'Tanpa Batas' ?></div></div>
-                      <div style="display:flex;align-items:center;gap:12px">
-                          <?php if($t['nama_file']): ?><span style="background:#E8F5E9;color:#2E7D32;border:1px solid #C8E6C9;padding:8px 16px;border-radius:50px;font-size:12.5px;font-weight:800;">Sudah Dikumpul</span>
-                          <?php else: ?><span style="background:#FFF8D6;color:#856404;border:1px solid #E2D38A;padding:8px 16px;border-radius:50px;font-size:12.5px;font-weight:800;">Belum Kumpul</span><?php endif; ?>
-                          <a href="murid.php?page=tugas&detail_tugas=<?= $t['id'] ?>" class="btn-yellow" style="padding:8px 16px;">Buka</a>
-                      </div>
-                  </div>
-              <?php endforeach; endif; ?>
-          </div>
-      <?php endif; ?>
-
-  <?php break; case 'quiz': ?>
-      <div class="card">
-          <h2 style="font-size:20px;margin-bottom:6px;font-weight:800;color:var(--sage-800);">Live Quiz Slearning</h2>
-          <?php 
-          $daftar_kuis = [];
-          if ($in_kelas !== '0') {
-              $qk = mysqli_query($koneksi, "SELECT q.id, q.judul, q.status, k.nama_kelas, (SELECT COUNT(*) FROM quiz_soal qs WHERE qs.quiz_id = q.id) AS total_soal, qh.skor FROM quiz q JOIN kelas k ON q.kelas_id = k.id LEFT JOIN quiz_hasil qh ON qh.quiz_id = q.id AND qh.user_id = $uid WHERE q.kelas_id IN ($in_kelas) ORDER BY q.id DESC LIMIT 10");
-              while ($qk && $r = mysqli_fetch_assoc($qk)) { $daftar_kuis[] = $r; }
-          }
-          if(empty($daftar_kuis)): ?>
-              <div style="padding:40px 20px;text-align:center;font-size:14px;color:var(--sage-600);border:1px dashed var(--sage-300);border-radius:var(--radius-lg);margin-top:20px;">Belum ada kuis baru.</div>
-          <?php else: ?>
-              <div class="class-grid">
-                  <?php foreach($daftar_kuis as $q): $is_done = isset($q['skor']); $status_kuis = $q['status']; ?>
-                  <article class="class-card">
-                      <div style="margin-bottom:16px;">
-                          <h4 style="font-size:17px;font-weight:800;color:var(--sage-800);margin-bottom:6px"><?= e($q['judul']) ?></h4>
-                          <p style="font-size:12.5px;color:var(--sage-600);font-weight:600;">📍 <?= e($q['nama_kelas']) ?> &bull; 📝 <?= (int)$q['total_soal'] ?> Soal</p>
-                      </div>
-                      <div style="margin-top:auto;">
-                          <?php if($is_done): ?><div style="background:#FAFCFA; border:1px solid var(--sage-100); padding:12px; border-radius:var(--radius-sm); font-size:14px; text-align:center; font-weight:800; color:var(--sage-800);">🏆 Poin Kamu: <?= (int)$q['skor'] ?></div>
-                          <?php elseif($status_kuis === 'selesai'): ?><div style="background:#FFF3F0; border:1px solid #FFCDD2; color:#C62828; padding:12px; border-radius:var(--radius-sm); font-size:13px; text-align:center; font-weight:700;">Kuis Ditutup</div>
-                          <?php else: ?>
-                              <a href="murid.php?page=kerjakan_quiz&quiz_id=<?= $q['id'] ?>" class="btn-yellow" style="width:100%; display:block; text-align:center; padding:14px; font-size:13px;"><?= $status_kuis === 'menunggu' ? '⏳ Masuk ke Lobi' : '▶️ Mulai Kuis!' ?></a>
-                          <?php endif; ?>
-                      </div>
-                  </article>
-                  <?php endforeach; ?>
-              </div>
-          <?php endif; ?>
-      </div>
-
-  <?php break; case 'kerjakan_quiz': ?>
-      <?php
-      if ($quiz_id_get <= 0) { echo "<p>Kuis tidak valid.</p>"; break; }
-      $q_info = mysqli_query($koneksi, "SELECT q.*, k.nama_kelas FROM quiz q JOIN kelas k ON q.kelas_id=k.id JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE q.id=$quiz_id_get AND ak.user_id=$uid AND COALESCE(ak.status, 'disetujui')='disetujui' LIMIT 1");
-      $kuis = $q_info ? mysqli_fetch_assoc($q_info) : null;
-      if (!$kuis) { echo "<div class='card quiz-container'><p style='color:red;'>Kuis tidak ditemukan atau Anda belum diizinkan masuk ke kelas ini.</p></div>"; break; }
-
-      $q_hasil = mysqli_query($koneksi, "SELECT skor FROM quiz_hasil WHERE quiz_id=$quiz_id_get AND user_id=$uid");
-      if (mysqli_num_rows($q_hasil) > 0) {
-          $skor = mysqli_fetch_assoc($q_hasil)['skor'];
-          echo "<div class='card quiz-container' style='padding:60px 20px;'><h2 style='font-size:26px; margin-bottom:12px; font-weight:900;'>Kuis Selesai! 🎉</h2>";
-          echo "<p style='font-size:15px; color:var(--sage-600); margin-bottom:20px; font-weight:600;'>Lihat perolehan Poin Kecepatan kamu.</p>";
-          echo "<div style='font-size:70px; font-weight:900; color:#CD7F32; margin: 30px 0; text-shadow: 0 4px 12px rgba(205,127,50,0.2);'>🏆 $skor</div>";
-          echo "<a href='murid.php?page=quiz' class='btn-yellow' style='padding:14px 28px;'>Kembali ke Daftar Kuis</a></div>";
-          break;
-      }
-
-      $status_kuis = $kuis['status'] ?? 'menunggu';
-
-      // JIKA STATUS MENUNGGU (LOBI AJAX)
-      if ($status_kuis === 'menunggu'):
-      ?>
-          <div class="card quiz-container" style="padding: 60px 20px; background: linear-gradient(135deg, #FFF8D6 0%, #FFFFFF 100%); border: 1px solid var(--nav-yellow-dark);">
-              <div style="margin-bottom: 24px;">
-                  <?php if($foto_profil && file_exists($foto_profil)): ?><img src="<?= e($foto_profil) ?>" style="width:120px; height:120px; border-radius:50%; object-fit:cover; border: 4px solid var(--sage-500); animation: bounce 2s infinite; box-shadow:0 8px 24px rgba(109,140,109,0.3);">
-                  <?php else: ?><div style="width:120px; height:120px; border-radius:50%; background:var(--sage-500); color:#fff; display:flex; align-items:center; justify-content:center; font-size:48px; font-weight:900; margin:0 auto; border: 4px solid #fff; box-shadow: 0 8px 24px rgba(109,140,109,0.3); animation: bounce 2s infinite;"><?= strtoupper(substr($nama_murid, 0, 1)) ?></div><?php endif; ?>
-              </div>
-              <h2 style="font-size: 28px; color: var(--sage-900); margin-bottom:6px; font-weight: 900; letter-spacing:-0.5px;"><?= e($nama_murid) ?></h2>
-              <p style="font-size: 15px; color: var(--sage-600); margin-bottom: 40px; font-weight: 800; opacity: 0.8;">@<?= e($username) ?></p>
-              <h3 style="font-size: 20px; margin-bottom:12px; font-weight:800; color:var(--sage-800);">Anda sudah di Lobi Tunggu</h3>
-              <p style="font-size: 15px; color:var(--sage-600); margin-bottom: 30px; font-weight:500;">Menunggu guru memulai kuis <strong><?= e($kuis['judul']) ?></strong>. Layar ini akan beralih otomatis.</p>
-              
-              <div style="background:var(--sage-500); display:inline-flex; align-items:center; gap:10px; padding:14px 32px; border-radius:50px; font-weight:800; color:#fff; font-size:15px; animation: pulse 2s infinite; box-shadow:0 4px 16px rgba(109,140,109,0.4);">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Menunggu Host...
-              </div>
-          </div>
-          
-          <script>
-          setInterval(() => {
-              fetch('murid.php?page=api_cek_kuis&quiz_id=<?= $quiz_id_get ?>')
-              .then(response => response.json())
-              .then(data => {
-                  if (data.status === 'mulai' || data.status === 'selesai') {
-                      window.location.reload(); 
-                  }
-              })
-              .catch(err => console.error("Gagal mengecek status kuis", err));
-          }, 3000); 
-          </script>
-      
-      <?php
-      // JIKA STATUS MULAI
-      elseif ($status_kuis === 'mulai'):
-          $list_soal = []; $qs = mysqli_query($koneksi, "SELECT id, pertanyaan, opsi_a, opsi_b, opsi_c, opsi_d, kunci FROM quiz_soal WHERE quiz_id=$quiz_id_get ORDER BY id ASC");
-          while($qs && $row = mysqli_fetch_assoc($qs)) { $list_soal[] = $row; }
-          if(empty($list_soal)) { echo "<div class='card quiz-container'><p>Belum ada soal.</p></div>"; break; }
-      ?>
-          <div class="quiz-container">
-              <div class="quiz-header">
-                  <span id="indikator-soal" style="font-size:15px;">Soal 1 / <?= count($list_soal) ?></span>
-                  <div class="timer-badge reading" id="timer-display">⏳ Bersiap...</div>
-                  <div class="score-badge">🏆 <span id="skor-ui">0</span></div>
-              </div>
-              <div class="card" style="padding: 40px;">
-                  <div class="soal-text" id="teks-soal">Memuat pertanyaan...</div>
-                  <div class="opsi-grid">
-                      <button class="btn-opsi" id="btn-a" disabled><span class="opsi-label">A</span> <span id="teks-a">...</span></button>
-                      <button class="btn-opsi" id="btn-b" disabled><span class="opsi-label">B</span> <span id="teks-b">...</span></button>
-                      <button class="btn-opsi" id="btn-c" disabled><span class="opsi-label">C</span> <span id="teks-c">...</span></button>
-                      <button class="btn-opsi" id="btn-d" disabled><span class="opsi-label">D</span> <span id="teks-d">...</span></button>
-                  </div>
-              </div>
-          </div>
-
-          <form id="form-submit-quiz" method="POST" style="display:none;">
-              <input type="hidden" name="submit_quiz_hasil" value="1">
-              <input type="hidden" name="quiz_id" value="<?= $quiz_id_get ?>">
-              <input type="hidden" name="benar" id="input-benar" value="0"><input type="hidden" name="total" value="<?= count($list_soal) ?>"><input type="hidden" name="skor_total" id="input-skor" value="0">
-          </form>
-
-          <script>
-          const soalList = <?php echo json_encode($list_soal); ?>; const totalSoal = soalList.length;
-          let currentSoal = 0; let skorBenar = 0; let skorTotalPoin = 0; let timerInterval; let waktuJawab = 0;
-
-          function renderSoal() {
-              if (currentSoal >= totalSoal) {
-                  document.getElementById('input-benar').value = skorBenar; document.getElementById('input-skor').value = skorTotalPoin;
-                  document.getElementById('form-submit-quiz').submit(); return;
-              }
-              let soal = soalList[currentSoal];
-              document.getElementById('indikator-soal').innerText = `Soal ${currentSoal + 1} / ${totalSoal}`;
-              document.getElementById('teks-soal').innerText = soal.pertanyaan;
-              document.getElementById('teks-a').innerText = soal.opsi_a; document.getElementById('teks-b').innerText = soal.opsi_b;
-              document.getElementById('teks-c').innerText = soal.opsi_c; document.getElementById('teks-d').innerText = soal.opsi_d;
-
-              kunciTombol(true);
-              let waktuBaca = 3; let timerUI = document.getElementById('timer-display'); timerUI.className = "timer-badge reading"; timerUI.innerHTML = `👀 Baca Soal: ${waktuBaca}s`;
-              timerInterval = setInterval(() => {
-                  waktuBaca--; timerUI.innerHTML = `👀 Baca Soal: ${waktuBaca}s`;
-                  if (waktuBaca <= 0) { clearInterval(timerInterval); mulaiJawab(soal); }
-              }, 1000);
-          }
-
-          function mulaiJawab(soal) {
-              kunciTombol(false); setupPilihanJawaban(soal.kunci);
-              waktuJawab = 5; let timerUI = document.getElementById('timer-display'); timerUI.className = "timer-badge"; timerUI.innerHTML = `⏱️ Menjawab: ${waktuJawab}s`;
-              timerInterval = setInterval(() => {
-                  waktuJawab--; timerUI.innerHTML = `⏱️ Menjawab: ${waktuJawab}s`;
-                  if (waktuJawab <= 0) { clearInterval(timerInterval); tampilkanFeedback(false, 0, 'Waktu Habis! ⏰'); }
-              }, 1000);
-          }
-
-          function kunciTombol(isLocked) {
-              ['btn-a', 'btn-b', 'btn-c', 'btn-d'].forEach(id => {
-                  let btn = document.getElementById(id); btn.disabled = isLocked; btn.style.opacity = isLocked ? '0.4' : '1';
-                  if (!isLocked) { let newBtn = btn.cloneNode(true); btn.parentNode.replaceChild(newBtn, btn); }
-              });
-          }
-
-          function setupPilihanJawaban(kunciBenar) {
-              document.getElementById('btn-a').addEventListener('click', () => prosesJawaban('A', kunciBenar)); document.getElementById('btn-b').addEventListener('click', () => prosesJawaban('B', kunciBenar));
-              document.getElementById('btn-c').addEventListener('click', () => prosesJawaban('C', kunciBenar)); document.getElementById('btn-d').addEventListener('click', () => prosesJawaban('D', kunciBenar));
-          }
-
-          function prosesJawaban(jawabanSiswa, kunciBenar) {
-              clearInterval(timerInterval); kunciTombol(true); 
-              let isCorrect = (jawabanSiswa === kunciBenar);
-              if (isCorrect) {
-                  skorBenar++; let poinDapat = Math.round((waktuJawab / 5) * 1000); if (poinDapat < 100) poinDapat = 100; 
-                  skorTotalPoin += poinDapat; document.getElementById('skor-ui').innerText = skorTotalPoin;
-                  tampilkanFeedback(true, poinDapat, 'BENAR! 🎉');
-              } else { tampilkanFeedback(false, 0, 'SALAH! 😢'); }
-          }
-
-          function tampilkanFeedback(isCorrect, poin, pesan) {
-              let overlay = document.createElement('div'); overlay.className = isCorrect ? 'feedback-overlay correct' : 'feedback-overlay wrong';
-              let kunciHuruf = soalList[currentSoal].kunci; let teksKunci = '';
-              if(kunciHuruf === 'A') teksKunci = soalList[currentSoal].opsi_a; if(kunciHuruf === 'B') teksKunci = soalList[currentSoal].opsi_b;
-              if(kunciHuruf === 'C') teksKunci = soalList[currentSoal].opsi_c; if(kunciHuruf === 'D') teksKunci = soalList[currentSoal].opsi_d;
-
-              if (isCorrect) { overlay.innerHTML = `<h1>${pesan}</h1><p>+${poin} Poin Kecepatan</p>`; } 
-              else { overlay.innerHTML = `<h1>${pesan}</h1><p style="font-size:16px;">Jawaban yang benar adalah:</p><div class="correct-ans-box">${kunciHuruf}. ${teksKunci}</div>`; }
-              document.body.appendChild(overlay);
-              setTimeout(() => { document.body.removeChild(overlay); currentSoal++; renderSoal(); }, 2000);
-          }
-          window.onload = renderSoal;
-          </script>
-      <?php elseif ($status_kuis === 'selesai'): ?>
-          <div class="card quiz-container" style="padding: 60px 20px;">
-              <h2 style="font-size: 28px; margin-bottom:10px; color:#C62828;">Yah, Kuis Sudah Ditutup! 😢</h2>
-              <p style="font-size: 16px; color:var(--sage-600); margin-bottom: 20px;">Guru telah mengakhiri sesi kuis ini.</p>
-              <a href='murid.php?page=quiz' class='btn-yellow'>Kembali ke Daftar Kuis</a>
-          </div>
-      <?php endif; ?>
-
-  <?php break; default: ?>
-      <div class="card" style="background:linear-gradient(135deg,var(--sage-50) 0%,#FFFFFF 100%); border:1px solid var(--sage-100); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;">
-          <div><small style="color:var(--sage-600);font-weight:800;text-transform:uppercase;letter-spacing:1px;">Dashboard Siswa</small><h1 style="font-size:28px;color:var(--sage-800);margin:8px 0;font-weight:800;letter-spacing:-0.5px;">Halo, <?= e($nama_murid) ?> 👋</h1><p style="font-size:14.5px;color:var(--sage-600);line-height:1.6;max-width:550px;font-weight:500;">Selamat datang di SLearning SMK Negeri 7 Batam.</p></div>
-      </div>
-      
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:20px;margin-bottom:36px;">
-          <div class="card" style="padding:24px;display:flex;align-items:center;gap:18px;margin-bottom:0;">
-              <div style="width:56px;height:56px;border-radius:16px;background:var(--nav-yellow);display:flex;align-items:center;justify-content:center;color:var(--sage-800);font-size:24px;">📝</div>
-              <div><h3 style="font-size:24px;font-weight:800;color:var(--sage-800);margin-bottom:2px;"><?= (int)$stat_tugas_aktif ?></h3><p style="font-size:13px;color:var(--sage-600);font-weight:600;">Tugas Aktif</p></div>
-          </div>
-          <div class="card" style="padding:24px;display:flex;align-items:center;gap:18px;margin-bottom:0;">
-              <div style="width:56px;height:56px;border-radius:16px;background:var(--nav-yellow);display:flex;align-items:center;justify-content:center;color:var(--sage-800);font-size:24px;">🎮</div>
-              <div><h3 style="font-size:24px;font-weight:800;color:var(--sage-800);margin-bottom:2px;"><?= (int)$stat_quiz ?></h3><p style="font-size:13px;color:var(--sage-600);font-weight:600;">Quiz Tersedia</p></div>
-          </div>
-      </div>
-  <?php endswitch; ?>
-
-  <!-- ================= MODAL BUKU PANDUAN MURID ================= -->
-  <div id="modalPanduan" class="modal-overlay">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 1 3-3h7z"/></svg>
-          Buku Panduan Murid
-        </h3>
-        <button onclick="tutupPanduan()" class="close-btn">&times;</button>
-      </div>
-      <div class="modal-body">
-        <ul>
-          <li><strong>Beranda:</strong> Ringkasan aktivitas siswa seperti total tugas aktif dan quiz yang tersedia di kelas.</li>
-          <li><strong>Kelas:</strong> Tempat untuk meminta gabung kelas (via Kode / QR Gambar) dan melihat status izin masuk dari guru.</li>
-          <li><strong>Absensi:</strong> Fitur untuk mengisi daftar hadir siswa (Hadir, Izin, Sakit) pada sesi yang telah dibuka oleh guru.</li>
-          <li><strong>Tugas:</strong> Panel untuk mengunggah dan mengumpulkan berkas tugas sebelum tenggat waktu berakhir.</li>
-          <li><strong>Quiz:</strong> Fitur untuk mengikuti Live Quiz interaktif secara langsung dan mengumpulkan Poin Kecepatan.</li>
-          <li><strong>Lapor Pelanggaran:</strong> Melaporkan tindakan tidak pantas dari sesama murid maupun guru. (Diakses via Menu ⋮)</li>
-        </ul>
-      </div>
-    </div>
+<?php else: ?>
+  <div class="card"><h1>Halo, <?= e($nama_murid) ?> 👋</h1><p class="muted">Selamat datang di SLearning SMK Negeri 7 Batam.</p></div>
+  <div class="grid">
+    <div class="card stat"><span class="stat-icon">📝</span><div><h2><?= $statTugas ?></h2><p class="muted">Tugas Aktif</p></div></div>
+    <div class="card stat"><span class="stat-icon">🎮</span><div><h2><?= $statQuiz ?></h2><p class="muted">Quiz Tersedia</p></div></div>
+    <div class="card stat"><span class="stat-icon">🏫</span><div><h2><?= count($kelasSaya) ?></h2><p class="muted">Kelas Diikuti</p></div></div>
   </div>
-
+  <div class="card"><h2>Aktivitas Terbaru</h2>
+  <?php if (!$notifikasi): ?><p class="muted">Belum ada aktivitas baru.</p><?php else: foreach($notifikasi as $n): ?>
+    <p><span class="badge"><?= e(strtoupper($n['tipe'])) ?></span> <?= e($n['judul']) ?> · <span class="muted"><?= e(tanggal_id($n['tanggal'])) ?></span></p>
+  <?php endforeach; endif; ?></div>
+<?php endif; ?>
 </main>
-
-<?php render_flash_notification(); ?>
-
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-<script>
-// Logika untuk Dropdown Titik 3
-function toggleDropdown(e) {
-    e.preventDefault();
-    document.getElementById("menuLanjutan").classList.toggle("show-dropdown");
-}
-
-// Logika untuk Buku Panduan
-function bukaPanduan(e) {
-    e.preventDefault();
-    document.getElementById('modalPanduan').style.display = 'flex';
-}
-function tutupPanduan() {
-    document.getElementById('modalPanduan').style.display = 'none';
-}
-
-// Menutup dropdown atau modal saat klik di luar area
-window.addEventListener('click', function(e) {
-    if (!e.target.closest('.dropdown')) {
-        let dropdown = document.getElementById("menuLanjutan");
-        if (dropdown && dropdown.classList.contains('show-dropdown')) {
-            dropdown.classList.remove('show-dropdown');
-        }
-    }
-    let modal = document.getElementById('modalPanduan');
-    if (e.target === modal) {
-        tutupPanduan();
-    }
-});
-
-(function () {
-    const fileInput = document.getElementById('qr-galeri-input');
-    const codeInput = document.getElementById('kode-gabung-input');
-    const form = document.getElementById('form-gabung-kelas');
-    const statusBox = document.getElementById('qr-galeri-status');
-    if (!fileInput || !codeInput || !form || !statusBox) return;
-
-    fileInput.addEventListener('change', async function () {
-        const file = this.files && this.files[0];
-        if (!file) return;
-        if (!file.type || !file.type.startsWith('image/')) {
-            statusBox.textContent = 'Pilih file gambar QR terlebih dahulu.';
-            return;
-        }
-        if (typeof jsQR !== 'function') {
-            statusBox.textContent = 'Pembaca QR belum termuat. Periksa koneksi internet lalu muat ulang halaman.';
-            return;
-        }
-        statusBox.textContent = 'Sedang membaca QR dari gambar...';
-        try {
-            let bitmap;
-            if ('createImageBitmap' in window) {
-                bitmap = await createImageBitmap(file);
-            } else {
-                bitmap = await new Promise((resolve, reject) => {
-                    const img = new Image();
-                    const objectUrl = URL.createObjectURL(file);
-                    img.onload = () => { URL.revokeObjectURL(objectUrl); resolve(img); };
-                    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Gambar tidak dapat dibuka.')); };
-                    img.src = objectUrl;
-                });
-            }
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            canvas.width = bitmap.width;
-            canvas.height = bitmap.height;
-            ctx.drawImage(bitmap, 0, 0);
-            if (bitmap.close) bitmap.close();
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-            if (!result || !result.data) {
-                statusBox.textContent = 'QR tidak terbaca. Coba pilih gambar yang lebih jelas dan tidak terpotong.';
-                return;
-            }
-
-            const isiQR = result.data.trim();
-            let kode = '';
-            try {
-                const url = new URL(isiQR, window.location.href);
-                kode = url.searchParams.get('gabung') || url.searchParams.get('kode_gabung') || '';
-            } catch (e) {}
-            if (!kode && !/^https?:\/\//i.test(isiQR) && !isiQR.includes('://')) kode = isiQR;
-            kode = kode.trim().toUpperCase();
-            if (!kode || kode.length > 100 || /[\s<>"']/.test(kode)) {
-                statusBox.textContent = 'QR terbaca, tetapi bukan QR/link gabung kelas SLearning.';
-                return;
-            }
-            codeInput.value = kode;
-            statusBox.textContent = 'Kode terbaca: ' + kode + '. Sedang mengirim pengajuan ke guru...';
-            form.requestSubmit();
-        } catch (error) {
-            statusBox.textContent = 'Gagal membaca gambar QR. Coba gambar lain.';
-        } finally {
-            fileInput.value = '';
-        }
-    });
-})();
-</script>
-
 </body>
 </html>
