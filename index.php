@@ -378,6 +378,7 @@ footer a:hover{color:var(--sage-900);text-decoration:underline}
     <div class="foot-bottom">
       <span>© <?php echo date('Y'); ?> SLearning — SMK Negeri 7 Batam. Untuk keperluan pembelajaran.</span>
       <span>Halaman guest • <a href="cek-db.php" style="color:#577357">cek-db</a></span>
+      <span style="width:100%;text-align:center">Dikembangkan oleh siswa SMK Negeri 7 Batam &bull; Guru Pembimbing: <strong>Debby Fransurya</strong></span>
     </div>
   </div>
 </footer>

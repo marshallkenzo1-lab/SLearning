@@ -13,6 +13,10 @@ if (!$user) { header("Location: logout.php"); exit; }
 $jenis = $user['jenis']; $nama = $user['nama'];
 $dashboard = ($jenis==='guru') ? 'guru.php' : 'murid.php';
 
+// Kolom gambar soal dibuat otomatis bila belum ada.
+$__imgcol = @mysqli_query($koneksi, "SHOW COLUMNS FROM quiz_soal LIKE 'gambar'");
+if ($__imgcol && mysqli_num_rows($__imgcol) === 0) @mysqli_query($koneksi, "ALTER TABLE quiz_soal ADD COLUMN gambar VARCHAR(255) NULL");
+
 // kolom jawaban untuk review (tambah bila belum ada)
 $__c = @mysqli_query($koneksi, "SHOW COLUMNS FROM quiz_hasil LIKE 'jawaban'");
 if ($__c && mysqli_num_rows($__c)===0) @mysqli_query($koneksi, "ALTER TABLE quiz_hasil ADD COLUMN jawaban TEXT NULL");
@@ -116,7 +120,7 @@ if ($qid===0) {
     <article class="quiz-card"><div class="quiz-top"><span class="quiz-label"><?= e(mb_strtoupper(mb_substr($z['nama_kelas']??$z['kelas']??'KELAS',0,14))) ?></span><span class="quiz-time"><?= svg_icon('clock',13) ?> <?= (int)$z['durasi_menit'] ?> mnt</span></div>
     <h3><?= e($z['judul']) ?></h3><p><?= $z['deskripsi']?e(mb_strimwidth($z['deskripsi'],0,90,'...')):((int)$z['jml']).' soal pilihan ganda.' ?></p>
     <div class="quiz-bottom"><span><?= (int)$z['jml'] ?> soal<?php if($jenis==='guru') echo ' • '.(int)$z['peserta'].' peserta'; elseif(!empty($z['dikerjakan_at'])) echo ' • Skor <strong>'.(int)$z['skor'].'</strong>'; ?></span>
-    <?php if($jenis==='guru'): ?><a class="link-more" href="quiziz_muridgit .php?id=<?= (int)$z['id'] ?>">Pratinjau <?= svg_icon('arrow-right',14) ?></a>
+    <?php if($jenis==='guru'): ?><a class="link-more" href="quiziz.php?id=<?= (int)$z['id'] ?>">Pratinjau <?= svg_icon('arrow-right',14) ?></a>
     <?php else: if(!empty($z['dikerjakan_at'])): ?><a class="link-more" href="quiziz.php?id=<?= (int)$z['id'] ?>&hasil=1">Lihat hasil <?= svg_icon('arrow-right',14) ?></a><?php else: ?><a class="link-more" href="quiziz.php?id=<?= (int)$z['id'] ?>">Kerjakan <?= svg_icon('arrow-right',14) ?></a><?php endif; endif; ?></div></article>
   <?php endforeach; ?></div><?php endif; ?>
 
@@ -135,6 +139,7 @@ if ($qid===0) {
     <?php if(!empty($soal_list)): ?><h3 style="font-size:16px;margin:20px 0 12px">Pembahasan jawaban</h3>
       <?php foreach($soal_list as $i=>$so): $pj = $jw[$so['id']] ?? $jw[(string)$so['id']] ?? '-'; $ok = ($pj===$so['kunci']); ?>
       <div class="soal" style="border-color:<?= $ok?'var(--green-bd)':'var(--red-bd)' ?>"><h4><?= ($i+1) ?>. <?= e($so['pertanyaan']) ?> <span class="pill <?= $ok?'ok':'red' ?>" style="margin-left:8px"><?= $ok?'Benar':'Kurang tepat' ?></span></h4>
+        <?php if(!empty($so['gambar'])): ?><img src="<?= e($so['gambar']) ?>" alt="Foto soal" style="display:block;max-width:100%;max-height:320px;margin:12px 0;border-radius:12px;border:1px solid var(--border)"><?php endif; ?>
         <div style="font-size:13px;display:grid;gap:6px;margin-top:8px">
         <?php foreach(['A'=>$so['opsi_a'],'B'=>$so['opsi_b'],'C'=>$so['opsi_c'],'D'=>$so['opsi_d']] as $huruf=>$teks): ?>
           <div style="padding:9px 12px;border-radius:10px;border:1.5px solid <?= $huruf===$so['kunci']?'var(--green-bd)':($huruf===$pj?'var(--red-bd)':'var(--border)') ?>;background:<?= $huruf===$so['kunci']?'var(--green-bg)':($huruf===$pj?'var(--red-bg)':'var(--bg-soft)') ?>"><strong><?= e($huruf) ?>.</strong> <?= e($teks) ?><?= $huruf===$so['kunci']?' <strong>• Kunci</strong>':'' ?><?= ($huruf===$pj&&$pj!==$so['kunci'])?' <strong>• Pilihanmu</strong>':'' ?></div>
@@ -151,6 +156,7 @@ if ($qid===0) {
       <?php if($jenis==='guru'): ?><a href="guru.php?kelola_quiz=<?= (int)$qid ?>#menu-quiz" class="btn btn-yellow" style="margin-top:12px"><?= svg_icon('plus',16) ?> Tambah Soal</a><?php endif; ?>
     <?php elseif($jenis==='guru'): ?>
       <?php foreach($soal_list as $i=>$so): ?><div class="soal"><h4><?= ($i+1) ?>. <?= e($so['pertanyaan']) ?> <span class="pill ok" style="margin-left:8px">Kunci: <?= e($so['kunci']) ?></span></h4>
+      <?php if(!empty($so['gambar'])): ?><img src="<?= e($so['gambar']) ?>" alt="Foto soal" style="display:block;max-width:100%;max-height:320px;margin:12px 0;border-radius:12px;border:1px solid var(--border)"><?php endif; ?>
       <div style="font-size:13px;color:var(--muted);margin-top:6px">A. <?= e($so['opsi_a']) ?> • B. <?= e($so['opsi_b']) ?> • C. <?= e($so['opsi_c']) ?> • D. <?= e($so['opsi_d']) ?></div></div><?php endforeach; ?>
       <div class="card"><h3 style="font-size:16px;margin-bottom:10px">Peserta (<?= count($quiz['_peserta']) ?>)</h3>
       <?php if(empty($quiz['_peserta'])): ?><div class="empty"><?= svg_icon('info',18) ?><span>Belum ada murid mengerjakan.</span></div>
@@ -161,6 +167,7 @@ if ($qid===0) {
       <div class="timer"><?= svg_icon('clock',20) ?><span>Sisa waktu:</span><strong id="countdown">--:--</strong><span style="font-size:12px;color:var(--muted-dark)">otomatis terkumpul saat waktu habis</span></div>
       <form method="POST" id="quizForm">
         <?php foreach($soal_list as $i=>$so): ?><div class="soal"><h4><?= ($i+1) ?>. <?= e($so['pertanyaan']) ?></h4>
+          <?php if(!empty($so['gambar'])): ?><img src="<?= e($so['gambar']) ?>" alt="Foto soal" style="display:block;max-width:100%;max-height:320px;margin:12px 0;border-radius:12px;border:1px solid var(--border)"><?php endif; ?>
           <div class="opsi">
           <?php foreach(['A'=>$so['opsi_a'],'B'=>$so['opsi_b'],'C'=>$so['opsi_c'],'D'=>$so['opsi_d']] as $huruf=>$teks): ?>
             <label><input type="radio" name="jwb_<?= (int)$so['id'] ?>" value="<?= e($huruf) ?>" required><span class="huruf"><?= e($huruf) ?></span><span><?= e($teks) ?></span></label>

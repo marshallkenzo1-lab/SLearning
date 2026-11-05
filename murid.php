@@ -1,793 +1,480 @@
 <?php
-session_start();
+/**
+ * SLearning - Dashboard Murid
+ * Versi bersih: konflik Git dan potongan halaman Login/Register sudah dihapus.
+ */
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// Kalau sudah login, langsung arahkan sesuai jenis akun
-if (isset($_SESSION["user_id"]) && isset($_SESSION["jenis"])) {
-    if ($_SESSION["jenis"] === "waka") {
-        header("Location: waka.php");
-    } elseif ($_SESSION["jenis"] === "guru") {
-        header("Location: guru.php");
-    } else {
-        header("Location: murid.php");
+/* =========================
+   KONEKSI DATABASE
+   =========================
+   File koneksi proyek harus membuat variabel mysqli $koneksi.
+   Lokasi umum dicoba otomatis. Jika lokasi berbeda, ubah daftar di bawah.
+*/
+$kandidatKoneksi = [
+    __DIR__ . '/koneksi.php',
+    __DIR__ . '/config/koneksi.php',
+    __DIR__ . '/config.php',
+    __DIR__ . '/includes/koneksi.php',
+    __DIR__ . '/db/koneksi.php'
+];
+foreach ($kandidatKoneksi as $fileKoneksi) {
+    if (is_file($fileKoneksi)) {
+        require_once $fileKoneksi;
+        if (isset($koneksi) && $koneksi instanceof mysqli) {
+            break;
+        }
     }
+}
+if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
+    http_response_code(500);
+    die('Koneksi database $koneksi tidak ditemukan. Pastikan file koneksi.php tersedia dan membuat variabel mysqli $koneksi.');
+}
+mysqli_set_charset($koneksi, 'utf8mb4');
+
+if (!function_exists('e')) {
+    function e($value): string {
+        return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+    }
+}
+if (!function_exists('tanggal_id')) {
+    function tanggal_id($tanggal, $jam = true): string {
+        if (!$tanggal) return '-';
+        $waktu = strtotime($tanggal);
+        if (!$waktu) return e($tanggal);
+        $bulan = [1=>'Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+        $hasil = date('j', $waktu).' '.$bulan[(int)date('n', $waktu)].' '.date('Y', $waktu);
+        return $jam ? $hasil.' '.date('H:i', $waktu) : $hasil;
+    }
+}
+function flash_murid(string $pesan, string $tipe = 'success', string $judul = 'Informasi'): void {
+    $_SESSION['flash_murid'] = ['pesan'=>$pesan, 'tipe'=>$tipe, 'judul'=>$judul];
+}
+function stmt_row(mysqli $db, string $sql, string $types = '', array $params = []): ?array {
+    $stmt = mysqli_prepare($db, $sql);
+    if (!$stmt) return null;
+    if ($types !== '') mysqli_stmt_bind_param($stmt, $types, ...$params);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $row = $result ? mysqli_fetch_assoc($result) : null;
+    mysqli_stmt_close($stmt);
+    return $row ?: null;
+}
+function stmt_rows(mysqli $db, string $sql, string $types = '', array $params = []): array {
+    $stmt = mysqli_prepare($db, $sql);
+    if (!$stmt) return [];
+    if ($types !== '') mysqli_stmt_bind_param($stmt, $types, ...$params);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $rows = [];
+    if ($result) while ($row = mysqli_fetch_assoc($result)) $rows[] = $row;
+    mysqli_stmt_close($stmt);
+    return $rows;
+}
+
+/* =========================
+   AUTENTIKASI
+   ========================= */
+if (empty($_SESSION['user_id'])) {
+    if (isset($_GET['gabung'])) {
+        $_SESSION['kode_gabung_pending'] = strtoupper(trim((string)$_GET['gabung']));
+    }
+    header('Location: login.php');
     exit;
 }
-
-/* =====================================
-   DATABASE CONNECTION
-===================================== */
-
-$host = "localhost";
-$dbname = "slearning_db";
-$dbuser = "root";
-$dbpass = "";
-
-$error = "";
-$success = "";
-
-$mode = $_POST["mode"] ?? "login";
-
-$nama = "";
-$username = $_COOKIE["slearning_remember"] ?? "";
-$email = "";
-$jenis = "murid";
-$registrationCode = "";
-
-// Atur kode ini sebagai environment variable di server.
-$wakaRegistrationCode = getenv("SLEARNING_WAKA_REGISTER_CODE") ?: "";
-$guruRegistrationCode = getenv("SLEARNING_GURU_REGISTER_CODE") ?: "";
-
-try {
-    $pdo = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
-        $dbuser,
-        $dbpass,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-        ]
-    );
-
-    // Membuat tabel otomatis jika belum ada (sesuai slearning_db.login)
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS login (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            nama VARCHAR(100) NOT NULL,
-            username VARCHAR(50) NOT NULL UNIQUE,
-            email VARCHAR(100) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            jenis ENUM('waka','guru','murid') NOT NULL,
-            level ENUM('super admin','admin','user') NOT NULL DEFAULT 'user'
-        )
-    ");
-
-} catch (PDOException $e) {
-    die("Koneksi database gagal. Pastikan MySQL aktif dan database slearning_db sudah dibuat.");
+if (($_SESSION['jenis'] ?? '') === 'guru') {
+    header('Location: guru.php');
+    exit;
 }
+if (($_SESSION['jenis'] ?? '') === 'waka') {
+    header('Location: waka.php');
+    exit;
+}
+$uid = (int)$_SESSION['user_id'];
+$user = stmt_row($koneksi, "SELECT id,nama,username,email,jenis,level,password,foto FROM login WHERE id=? LIMIT 1", 'i', [$uid]);
+if (!$user || ($user['jenis'] ?? '') !== 'murid') {
+    session_unset();
+    session_destroy();
+    header('Location: login.php');
+    exit;
+}
+foreach (['nama','username','email','jenis','level','foto'] as $kolom) {
+    $_SESSION[$kolom] = $user[$kolom] ?? '';
+}
+$nama_murid = $user['nama'];
+$foto_profil = $user['foto'] ?? '';
 
+/* =========================
+   MIGRASI RINGAN
+   ========================= */
+$cek = @mysqli_query($koneksi, "SHOW COLUMNS FROM anggota_kelas LIKE 'status'");
+if ($cek && mysqli_num_rows($cek) === 0) {
+    @mysqli_query($koneksi, "ALTER TABLE anggota_kelas ADD COLUMN status ENUM('pending','disetujui','ditolak') NOT NULL DEFAULT 'pending'");
+}
+@mysqli_query($koneksi, "CREATE TABLE IF NOT EXISTS laporan_pengguna (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    pelapor_id INT NOT NULL,
+    terlapor_id INT NOT NULL,
+    kategori VARCHAR(100) NOT NULL,
+    deskripsi TEXT,
+    status ENUM('pending','diproses','selesai') NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)");
 
-/* =====================================
-   FORM PROCESSING
-===================================== */
-
-if ($_SERVER["REQUEST_METHOD"] === "POST") {
-
-    $mode = $_POST["mode"] ?? "login";
-    $username = trim($_POST["username"] ?? "");
-    $password = $_POST["password"] ?? "";
-
-    if ($mode === "register") {
-
-        $nama = trim($_POST["nama"] ?? "");
-        $email = trim($_POST["email"] ?? "");
-        $jenis = $_POST["jenis"] ?? "";
-        $registrationCode = trim($_POST["registration_code"] ?? "");
-        $confirm = $_POST["confirm_password"] ?? "";
-
-        // Validasi
-        if (
-            empty($nama) ||
-            empty($username) ||
-            empty($email) ||
-            empty($password) ||
-            empty($confirm)
-        ) {
-            $error = "Semua kolom wajib diisi!";
-
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $error = "Format Gmail atau email tidak valid!";
-
-        } elseif (!in_array($jenis, ["waka", "guru", "murid"], true)) {
-            $error = "Pilih jenis pendaftaran yang valid!";
-
-        } elseif ($jenis === "waka" && ($wakaRegistrationCode === "" || !hash_equals($wakaRegistrationCode, $registrationCode))) {
-            $error = "Kode pendaftaran Waka tidak valid atau belum diatur oleh pengelola.";
-
-        } elseif ($jenis === "guru" && ($guruRegistrationCode === "" || !hash_equals($guruRegistrationCode, $registrationCode))) {
-            $error = "Kode pendaftaran Guru tidak valid atau belum diatur oleh pengelola.";
-
-        } elseif (strlen($password) < 8) {
-            $error = "Password minimal 8 karakter!";
-
-        } elseif ($password !== $confirm) {
-            $error = "Konfirmasi password tidak cocok!";
-
+/* =========================
+   PROSES FORM
+   ========================= */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Update profil
+    if (isset($_POST['update_profil'])) {
+        $nama = trim($_POST['nama'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        if ($nama === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            flash_murid('Nama dan email yang valid wajib diisi.', 'error');
         } else {
+            $sql = "UPDATE login SET nama=?, email=?";
+            $types = 'ss';
+            $params = [$nama, $email];
+            $passLama = $_POST['password_lama'] ?? '';
+            $passBaru = $_POST['password_baru'] ?? '';
+            if ($passBaru !== '') {
+                if (!password_verify($passLama, $user['password'])) {
+                    flash_murid('Password lama tidak sesuai.', 'error', 'Gagal');
+                    header('Location: murid.php?page=profil'); exit;
+                }
+                if (strlen($passBaru) < 8) {
+                    flash_murid('Password baru minimal 8 karakter.', 'error');
+                    header('Location: murid.php?page=profil'); exit;
+                }
+                $sql .= ', password=?';
+                $types .= 's';
+                $params[] = password_hash($passBaru, PASSWORD_DEFAULT);
+            }
+            if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
+                $ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
+                $mime = mime_content_type($_FILES['foto']['tmp_name']);
+                $allowed = ['jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','gif'=>'image/gif'];
+                if (isset($allowed[$ext]) && $mime === $allowed[$ext]) {
+                    $folder = __DIR__.'/uploads/profil/';
+                    if (!is_dir($folder)) mkdir($folder, 0755, true);
+                    $namaFile = 'murid_'.$uid.'_'.bin2hex(random_bytes(5)).'.'.$ext;
+                    if (move_uploaded_file($_FILES['foto']['tmp_name'], $folder.$namaFile)) {
+                        $sql .= ', foto=?'; $types .= 's'; $params[] = 'uploads/profil/'.$namaFile;
+                    }
+                } else {
+                    flash_murid('Foto harus berupa JPG, PNG, atau GIF.', 'error');
+                }
+            }
+            $sql .= ' WHERE id=?'; $types .= 'i'; $params[] = $uid;
+            $st = mysqli_prepare($koneksi, $sql);
+            if ($st) {
+                mysqli_stmt_bind_param($st, $types, ...$params);
+                $ok = mysqli_stmt_execute($st);
+                mysqli_stmt_close($st);
+                flash_murid($ok ? 'Profil berhasil diperbarui.' : 'Profil gagal diperbarui.', $ok ? 'success' : 'error');
+            } else flash_murid('Query profil gagal diproses.', 'error');
+        }
+        header('Location: murid.php?page=profil'); exit;
+    }
 
-            // Cek username atau email sudah digunakan
-            $check = $pdo->prepare("
-                SELECT id FROM login
-                WHERE username = ? OR email = ?
-            ");
-
-            $check->execute([$username, $email]);
-
-            if ($check->fetch()) {
-
-                $error = "Username atau email sudah terdaftar!";
-
+    // Gabung kelas
+    if (isset($_POST['gabung_kelas'])) {
+        $kode = strtoupper(trim($_POST['kode_gabung'] ?? ''));
+        $kelas = $kode !== '' ? stmt_row($koneksi, "SELECT id,nama_kelas FROM kelas WHERE kode_gabung=? LIMIT 1", 's', [$kode]) : null;
+        if (!$kelas) {
+            flash_murid('Kode kelas tidak ditemukan.', 'error', 'Gagal');
+        } else {
+            $kid = (int)$kelas['id'];
+            $anggota = stmt_row($koneksi, "SELECT id,status FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1", 'ii', [$kid,$uid]);
+            if ($anggota) {
+                if (($anggota['status'] ?? 'disetujui') === 'disetujui') {
+                    flash_murid('Kamu sudah tergabung di kelas ini.', 'info');
+                } else {
+                    $st = mysqli_prepare($koneksi, "UPDATE anggota_kelas SET status='pending' WHERE id=?");
+                    mysqli_stmt_bind_param($st, 'i', $anggota['id']); mysqli_stmt_execute($st); mysqli_stmt_close($st);
+                    flash_murid('Permintaan bergabung dikirim ulang.', 'success');
+                }
             } else {
+                $st = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id,user_id,status) VALUES (?,?,'pending')");
+                mysqli_stmt_bind_param($st, 'ii', $kid, $uid);
+                $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
+                flash_murid($ok ? 'Permintaan bergabung dikirim. Tunggu persetujuan guru.' : 'Gagal mengirim permintaan.', $ok ? 'success' : 'error');
+            }
+            header('Location: murid.php?page=detail_kelas&id='.$kid); exit;
+        }
+        header('Location: murid.php?page=kelas'); exit;
+    }
 
-                // Hash password sebelum disimpan
-                $hashedPassword = password_hash(
-                    $password,
-                    PASSWORD_DEFAULT
-                );
+    // Isi absensi
+    if (isset($_POST['isi_absen'])) {
+        $aid = (int)($_POST['absensi_id'] ?? 0);
+        $statusAbsen = $_POST['status'] ?? 'hadir';
+        if (!in_array($statusAbsen, ['hadir','izin','sakit'], true)) $statusAbsen = 'hadir';
+        $valid = stmt_row($koneksi, "SELECT a.id FROM absensi a JOIN anggota_kelas ak ON ak.kelas_id=a.kelas_id WHERE a.id=? AND ak.user_id=? AND COALESCE(ak.status,'disetujui')='disetujui' LIMIT 1", 'ii', [$aid,$uid]);
+        if ($valid) {
+            $st = mysqli_prepare($koneksi, "INSERT INTO absensi_hadir (absensi_id,user_id,status) VALUES (?,?,?) ON DUPLICATE KEY UPDATE status=VALUES(status), waktu=CURRENT_TIMESTAMP");
+            mysqli_stmt_bind_param($st, 'iis', $aid, $uid, $statusAbsen);
+            $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
+            flash_murid($ok ? 'Kehadiran berhasil dicatat.' : 'Absensi gagal disimpan.', $ok ? 'success' : 'error');
+        } else flash_murid('Sesi absensi tidak ditemukan atau akses ditolak.', 'error');
+        header('Location: murid.php?page=absensi'); exit;
+    }
 
-                // Hak akses ditentukan di server, bukan dari input browser.
-                $level = ($jenis === "waka") ? "super admin" : (($jenis === "guru") ? "admin" : "user");
-
-                $stmt = $pdo->prepare("
-                    INSERT INTO login
-                    (nama, username, email, password, jenis, level)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ");
-
-                $stmt->execute([
-                    $nama,
-                    $username,
-                    $email,
-                    $hashedPassword,
-                    $jenis,
-                    $level
-                ]);
-
-                $success = "Pendaftaran berhasil! Silakan masuk menggunakan username dan password.";
-
-                $mode = "login";
-                $nama = "";
-                $username = "";
-                $email = "";
-                $jenis = "murid";
-                $registrationCode = "";
+    // Kumpulkan tugas
+    if (isset($_POST['kumpulkan_tugas'])) {
+        $tid = (int)($_POST['tugas_id'] ?? 0);
+        $valid = stmt_row($koneksi, "SELECT t.id FROM tugas t JOIN anggota_kelas ak ON ak.kelas_id=t.kelas_id WHERE t.id=? AND ak.user_id=? AND COALESCE(ak.status,'disetujui')='disetujui' LIMIT 1", 'ii', [$tid,$uid]);
+        if (!$valid) {
+            flash_murid('Tugas tidak ditemukan atau akses ditolak.', 'error');
+        } elseif (!isset($_FILES['file_tugas']) || $_FILES['file_tugas']['error'] !== UPLOAD_ERR_OK) {
+            flash_murid('Pilih file tugas terlebih dahulu.', 'error');
+        } else {
+            $f = $_FILES['file_tugas'];
+            $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+            $allowed = ['pdf','doc','docx','ppt','pptx','zip','rar','jpg','jpeg','png'];
+            if ($f['size'] > 10*1024*1024 || !in_array($ext, $allowed, true)) {
+                flash_murid('File maksimal 10 MB dan format harus PDF/DOC/DOCX/PPT/PPTX/ZIP/RAR/JPG/PNG.', 'error');
+            } else {
+                $folder = __DIR__.'/uploads/tugas/';
+                if (!is_dir($folder)) mkdir($folder, 0755, true);
+                $fileBaru = 'tugas_'.$uid.'_'.$tid.'_'.bin2hex(random_bytes(5)).'.'.$ext;
+                $pathDatabase = 'uploads/tugas/'.$fileBaru;
+                if (move_uploaded_file($f['tmp_name'], $folder.$fileBaru)) {
+                    $lama = stmt_row($koneksi, "SELECT id,file_path FROM pengumpulan_tugas WHERE tugas_id=? AND user_id=? LIMIT 1", 'ii', [$tid,$uid]);
+                    if ($lama) {
+                        $st = mysqli_prepare($koneksi, "UPDATE pengumpulan_tugas SET nama_file=?,file_path=?,nilai=NULL,feedback=NULL,dikumpulkan_at=CURRENT_TIMESTAMP WHERE id=?");
+                        mysqli_stmt_bind_param($st, 'ssi', $f['name'], $pathDatabase, $lama['id']);
+                    } else {
+                        $st = mysqli_prepare($koneksi, "INSERT INTO pengumpulan_tugas (tugas_id,user_id,nama_file,file_path) VALUES (?,?,?,?)");
+                        mysqli_stmt_bind_param($st, 'iiss', $tid, $uid, $f['name'], $pathDatabase);
+                    }
+                    $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
+                    flash_murid($ok ? 'Tugas berhasil dikumpulkan.' : 'Gagal menyimpan data tugas.', $ok ? 'success' : 'error');
+                } else flash_murid('File gagal diunggah.', 'error');
             }
         }
+        header('Location: murid.php?page=tugas'); exit;
+    }
 
-    } elseif ($mode === "login") {
-
-        if (empty($username) || empty($password)) {
-
-            $error = "Username dan password wajib diisi!";
-
+    // Kirim laporan
+    if (isset($_POST['kirim_laporan'])) {
+        $terlapor = (int)($_POST['terlapor_id'] ?? 0);
+        $kategori = trim($_POST['kategori'] ?? '');
+        $deskripsi = trim($_POST['deskripsi'] ?? '');
+        $tujuan = stmt_row($koneksi, "SELECT id FROM login WHERE id=? AND jenis IN ('guru','murid')", 'i', [$terlapor]);
+        if (!$tujuan || $terlapor === $uid || $kategori === '' || $deskripsi === '') {
+            flash_murid('Data laporan tidak valid.', 'error');
         } else {
-
-            // Cari akun berdasarkan username di tabel login
-            $stmt = $pdo->prepare("
-                SELECT * FROM login
-                WHERE username = ?
-                LIMIT 1
-            ");
-
-            $stmt->execute([$username]);
-
-            $user = $stmt->fetch();
-
-            if ($user && password_verify($password, $user["password"])) {
-
-                session_regenerate_id(true);
-
-                $_SESSION["user_id"] = $user["id"];
-                $_SESSION["nama"] = $user["nama"];
-                $_SESSION["username"] = $user["username"];
-                $_SESSION["email"] = $user["email"] ?? "";
-                $_SESSION["jenis"] = $user["jenis"];
-                $_SESSION["level"] = $user["level"] ?? "user";
-
-                // Ingat username selama 30 hari (tidak menyimpan password).
-                $cookieOptions = [
-                    "expires" => !empty($_POST["remember"]) ? time() + (30 * 86400) : time() - 3600,
-                    "path" => "/",
-                    "secure" => !empty($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] !== "off",
-                    "httponly" => true,
-                    "samesite" => "Lax"
-                ];
-                if (!empty($_POST["remember"])) {
-                    setcookie("slearning_remember", $username, $cookieOptions);
-                } else {
-                    setcookie("slearning_remember", "", $cookieOptions);
-                }
-
-                // Arahkan hanya jika jenis akun dan levelnya cocok.
-                if ($user["jenis"] === "waka" && $user["level"] === "super admin") {
-                    header("Location: waka.php");
-                    exit;
-                } elseif ($user["jenis"] === "guru" && $user["level"] === "admin") {
-                    header("Location: guru.php");
-                    exit;
-                } elseif ($user["jenis"] === "murid" && $user["level"] === "user") {
-                    header("Location: murid.php");
-                    exit;
-                } else {
-                    session_unset();
-                    session_destroy();
-                    $error = "Jenis akun atau hak akses tidak sesuai. Hubungi pengelola.";
-                }
-
-            } else {
-
-                $error = "Username atau password salah!";
-
-            }
+            $st = mysqli_prepare($koneksi, "INSERT INTO laporan_pengguna (pelapor_id,terlapor_id,kategori,deskripsi) VALUES (?,?,?,?)");
+            mysqli_stmt_bind_param($st, 'iiss', $uid, $terlapor, $kategori, $deskripsi);
+            $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
+            flash_murid($ok ? 'Laporan berhasil dikirim.' : 'Laporan gagal dikirim.', $ok ? 'success' : 'error');
         }
+        header('Location: murid.php?page=laporan'); exit;
     }
 }
-?>
 
+/* =========================
+   DATA DASHBOARD
+   ========================= */
+$kelasSaya = stmt_rows($koneksi, "SELECT k.id,k.nama_kelas,k.kode_gabung,k.guru_id,COALESCE(ak.status,'disetujui') status_izin,l.nama nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id LEFT JOIN login l ON l.id=k.guru_id WHERE ak.user_id=? ORDER BY k.id DESC", 'i', [$uid]);
+$kelasDisetujui = [];
+foreach ($kelasSaya as $k) if (($k['status_izin'] ?? 'disetujui') === 'disetujui') $kelasDisetujui[] = (int)$k['id'];
+$inKelas = $kelasDisetujui ? implode(',', $kelasDisetujui) : '0';
+$statTugas = 0; $statQuiz = 0;
+$r = mysqli_query($koneksi, "SELECT COUNT(*) jml FROM tugas WHERE kelas_id IN ($inKelas)");
+if ($r) $statTugas = (int)(mysqli_fetch_assoc($r)['jml'] ?? 0);
+$r = mysqli_query($koneksi, "SELECT COUNT(*) jml FROM quiz WHERE kelas_id IN ($inKelas)");
+if ($r) $statQuiz = (int)(mysqli_fetch_assoc($r)['jml'] ?? 0);
+$notifikasi = [];
+if ($inKelas !== '0') {
+    $r = mysqli_query($koneksi, "SELECT judul_tugas judul,'tugas' tipe,created_at tanggal FROM tugas WHERE kelas_id IN ($inKelas) UNION SELECT judul,'quiz' tipe,created_at tanggal FROM quiz WHERE kelas_id IN ($inKelas) ORDER BY tanggal DESC LIMIT 15");
+    if ($r) while ($x = mysqli_fetch_assoc($r)) $notifikasi[] = $x;
+}
+$page = $_GET['page'] ?? 'beranda';
+$quizId = (int)($_GET['quiz_id'] ?? 0);
+$flash = $_SESSION['flash_murid'] ?? null;
+unset($_SESSION['flash_murid']);
+?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>SLearning | Login & Register</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SLearning | Dashboard Murid</title>
 <style>
-:root {
-    --sage: #9CAF88;
-    --sage-dark: #718765;
-    --sage-deep: #53694b;
-    --sage-light: #e7eddf;
-    --yellow: #fff3b0;
-    --yellow-soft: #fff9dc;
-    --yellow-border: #e7d77b;
-    --ink: #344331;
-    --muted: #71806d;
-    --line: #dce3d3;
-}
-* { margin:0; padding:0; box-sizing:border-box; }
-body {
-    min-height:100vh; color:var(--ink); font-family:'Open Sans',Arial,sans-serif;
-    background:linear-gradient(125deg,#fffbe4 0%,#f7f6d9 48%,#e9eedf 100%);
-}
-button,input,select { font:inherit; }
-a { color:inherit; text-decoration:none; }
-.navbar {
-    min-height:84px; padding:14px clamp(20px,5vw,76px); display:flex; align-items:center;
-    justify-content:space-between; gap:20px; background:rgba(132,153,116,.96);
-    border-bottom:1px solid rgba(255,255,255,.35); box-shadow:0 6px 24px rgba(55,75,45,.10);
-}
-.logo { display:flex; align-items:center; gap:13px; }
-.logo img { width:50px; height:50px; object-fit:contain; background:#fff9dc; border-radius:12px; padding:3px; }
-.logo h2 { color:#fffbea; font-size:clamp(20px,2.5vw,27px); line-height:1.15; font-weight:800; }
-.logo p { color:#fff3b0; font-size:11px; margin-top:5px; letter-spacing:1px; font-weight:700; }
-.nav-menu { display:flex; align-items:center; gap:12px; }
-.nav-button { display:inline-flex; align-items:center; justify-content:center; padding:12px 22px; border:1px solid rgba(255,255,255,.65); border-radius:999px; background:var(--yellow); color:var(--sage-deep); font-weight:700; transition:.2s; }
-.nav-button:hover { background:#fff9dc; transform:translateY(-1px); }
-.main {
-    min-height:calc(100vh - 84px); padding:clamp(28px,5vw,64px) clamp(20px,5vw,76px);
-    display:grid; grid-template-columns:minmax(0,1fr) minmax(360px,590px); align-items:center; gap:clamp(32px,5vw,70px);
-    background-image:radial-gradient(circle at 0% 0%,rgba(156,175,136,.20),transparent 28%),radial-gradient(circle at 100% 100%,rgba(255,243,176,.55),transparent 30%);
-}
-.hero { max-width:610px; }
-.badge { display:inline-block; padding:9px 15px; margin-bottom:22px; background:var(--yellow-soft); border:1px solid var(--yellow-border); border-radius:999px; color:var(--sage-deep); font-size:12px; font-weight:800; letter-spacing:.06em; }
-.hero h1 { font-family:'Poppins',Arial,sans-serif; font-size:clamp(30px,4vw,52px); line-height:1.15; font-weight:800; letter-spacing:-1px; margin-bottom:22px; color:var(--sage-deep); }
-.hero p { color:#65745f; font-size:clamp(15px,1.4vw,18px); line-height:1.8; max-width:530px; }
-.features { display:flex; flex-wrap:wrap; gap:13px 20px; margin-top:28px; color:#596b52; font-size:13px; font-weight:600; }
-.features span { color:var(--sage-dark); margin-right:6px; font-weight:900; }
-.auth-card { width:100%; max-width:590px; justify-self:end; padding:clamp(24px,3vw,38px); background:rgba(255,253,235,.92); border:1px solid rgba(221,214,155,.85); border-radius:26px; box-shadow:0 22px 55px rgba(78,96,62,.13); backdrop-filter:blur(8px); }
-.auth-header h2 { font-family:'Poppins',Arial,sans-serif; font-size:clamp(23px,2.5vw,29px); color:var(--sage-deep); margin-bottom:8px; }
-.auth-header p { color:var(--muted); font-size:14px; line-height:1.6; margin-bottom:23px; }
-.alert { padding:12px 14px; margin-bottom:17px; border-radius:12px; font-size:13px; line-height:1.5; }
-.alert.error { background:#fff0ed; color:#a43b30; border:1px solid #efc5be; }
-.alert.success { background:#edf7e9; color:#3e7041; border:1px solid #c3ddbc; }
-.tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:5px; margin-bottom:24px; background:#e8eddf; border:1px solid #dce3d3; border-radius:999px; }
-.tab { min-height:46px; padding:11px; border:0; border-radius:999px; background:transparent; color:#66785e; font-size:14px; font-weight:800; cursor:pointer; transition:.2s; }
-.tab.active { background:var(--sage-dark); color:#fffbea; box-shadow:0 4px 10px rgba(83,105,75,.18); }
-.form-group { margin-bottom:17px; }
-.form-group label { display:block; margin-bottom:8px; font-size:13px; font-weight:700; color:#465941; }
-.input-box { min-height:52px; display:flex; align-items:center; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:rgba(255,255,255,.55); transition:.2s; }
-.input-box:focus-within { border-color:var(--sage-dark); background:#fffef4; box-shadow:0 0 0 3px rgba(156,175,136,.2); }
-.input-icon { color:var(--sage-dark); margin-right:11px; font-size:17px; }
-.input-box input { width:100%; min-width:0; height:50px; border:0; outline:0; background:transparent; color:var(--ink); font-size:14px; }
-.input-box input::placeholder { color:#98a38f; }
-.select-box { width:100%; min-height:52px; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:rgba(255,255,255,.6); color:var(--ink); font-size:14px; outline:0; cursor:pointer; }
-.select-box:focus { border-color:var(--sage-dark); box-shadow:0 0 0 3px rgba(156,175,136,.18); }
-.password-toggle { flex-shrink:0; padding:5px; border:0; background:transparent; color:var(--sage-dark); cursor:pointer; }
-.form-options { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:5px 0 22px; font-size:13px; }
-.remember { display:flex; align-items:center; gap:8px; color:var(--muted); }
-.remember input { accent-color:var(--sage-dark); }
-.forgot { color:var(--sage-deep); font-weight:700; }
-.submit-btn { width:100%; min-height:53px; border:0; border-radius:999px; background:var(--sage-dark); color:#fffbea; font-size:15px; font-weight:800; cursor:pointer; transition:.2s; box-shadow:0 7px 16px rgba(83,105,75,.16); }
-.submit-btn:hover { background:var(--sage-deep); transform:translateY(-1px); }
-.auth-footer { text-align:center; margin:23px 0; color:var(--muted); font-size:13px; }
-.auth-footer button { border:0; background:transparent; color:var(--sage-deep); font-weight:800; cursor:pointer; font-size:13px; margin-left:4px; }
-.security { border-top:1px solid var(--line); padding-top:17px; text-align:center; color:#7b8873; font-size:12px; }
-@media(max-width:950px) { .main { grid-template-columns:1fr; gap:32px; padding-top:38px; } .hero { text-align:center; margin:auto; } .hero p { margin:auto; } .features { justify-content:center; } .auth-card { justify-self:center; } }
-@media(max-width:520px) { .navbar { min-height:72px; padding:12px 5%; } .logo img { width:42px; height:42px; } .logo p { font-size:9px; letter-spacing:.5px; } .nav-button { padding:10px 14px; font-size:12px; } .main { padding:30px 5%; } .hero h1 { font-size:32px; } .auth-card { padding:23px 18px; border-radius:20px; } .form-options { align-items:flex-start; font-size:12px; } }
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+:root{--yellow:#fff8d6;--sage:#6d8c6d;--sage-dark:#577357;--sage-light:#e8f0e8;--ink:#263326;--muted:#687968;--line:#dce7dc}
+*{box-sizing:border-box}body{margin:0;background:#f4f7f5;color:var(--ink);font-family:'Plus Jakarta Sans',Arial,sans-serif}
+a{color:inherit;text-decoration:none}.header{background:linear-gradient(180deg,var(--yellow),#fff);border-bottom:1px solid #eee5bd;position:sticky;top:0;z-index:5}
+.header-top{max-width:1150px;margin:auto;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;gap:15px}
+.logo{font-size:22px;font-weight:800;color:#2f402f}.logo span{font-size:12px;background:var(--sage-light);padding:5px 10px;border-radius:30px;color:var(--sage)}
+.header-actions{display:flex;gap:10px;align-items:center}.header-actions a{padding:9px 13px;border-radius:30px;background:#fff;border:1px solid var(--line);font-size:13px;font-weight:700}
+.nav{max-width:1150px;margin:auto;padding:0 16px;display:flex;gap:5px;overflow-x:auto}.nav a{padding:13px 16px;font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap;border-radius:10px 10px 0 0}.nav a.active,.nav a:hover{background:#fff;color:var(--ink);border-bottom:3px solid var(--sage)}
+.container{max-width:1100px;margin:30px auto;padding:0 22px 60px}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:25px;margin-bottom:18px;box-shadow:0 5px 18px #6d8c6d0c}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.stat{display:flex;gap:15px;align-items:center}.stat-icon{font-size:25px;background:var(--yellow);padding:15px;border-radius:14px}.muted{color:var(--muted);font-size:13px}.btn{display:inline-block;background:var(--sage);color:#fff;border:0;border-radius:30px;padding:11px 17px;font-weight:800;font-size:13px;cursor:pointer}.btn:hover{background:var(--sage-dark)}.btn-light{background:#fff;color:var(--sage-dark);border:1px solid var(--line)}
+input,select,textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fbfdfb;margin:6px 0 14px}label{font-size:13px;font-weight:700}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;border-bottom:1px solid var(--line);font-size:13px}
+.alert{padding:13px 16px;border-radius:12px;margin-bottom:18px;background:#e8f5e9;color:#28652d}.alert.error{background:#ffefed;color:#a43b30}
+.badge{display:inline-block;padding:5px 10px;border-radius:30px;background:var(--yellow);font-size:11px;font-weight:800}
+@media(max-width:600px){.header-top{padding:14px}.container{padding:0 13px}.card{padding:18px}.header-actions a{font-size:11px;padding:8px}}
 </style>
 </head>
-
 <body>
-
-<!-- NAVBAR -->
-
-<header class="navbar">
-
-    <div class="logo">
-        <!-- Pastikan nama file gambar logo sesuai (contoh: image_a630c8.png) -->
-        <img src="assets/img/logo-smkn7.png" alt="Logo SMK Negeri 7 Batam">
-
-        <div>
-            <h2>SLearning</h2>
-            <p>SKAJU LEARNING • SMKN 7</p>
-        </div>
+<header class="header">
+  <div class="header-top">
+    <a class="logo" href="murid.php">SLearning <span>Murid</span></a>
+    <div class="header-actions">
+      <a href="murid.php?page=profil"><?= e($nama_murid) ?></a>
+      <a href="logout.php" onclick="return confirm('Keluar dari SLearning?')">Keluar</a>
     </div>
-
-    <nav class="nav-menu">
-        <a href="#auth" class="nav-button">Masuk / Daftar</a>
-    </nav>
-
+  </div>
+  <nav class="nav">
+    <?php
+    $menu = ['beranda'=>'Beranda','kelas'=>'Kelas','absensi'=>'Absensi','tugas'=>'Tugas','quiz'=>'Quiz','notif'=>'Notifikasi','laporan'=>'Laporan','profil'=>'Profil'];
+    foreach ($menu as $key=>$label):
+    ?>
+      <a class="<?= $page===$key?'active':'' ?>" href="murid.php?page=<?= e($key) ?>"><?= e($label) ?></a>
+    <?php endforeach; ?>
+  </nav>
 </header>
-
-<!-- MAIN -->
-
-<main class="main">
-
-    <!-- HERO -->
-
-    <section class="hero">
-
-        <div class="badge">
-            🟡 SKAJU LEARNING • SMK NEGERI 7 BATAM
-        </div>
-
-        <h1>
-            SMK NEGERI 7 BATAM
-            <br>
-            INOVATIF DAN
-            <br>
-            BERBUDAYA
-            <br>
-            SMK BISA SMK HEBAT
-        </h1>
-
-        <p>
-            SLearning menyatukan pembelajaran,
-            pengumpulan tugas, dan pengelolaan kelas
-            dalam satu tempat. Tanpa grup chat tercecer,
-            tanpa deadline terlewat.
-        </p>
-
-        <div class="features">
-            <div><span>✓</span> Belajar lebih teratur</div>
-            <div><span>✓</span> Pengumpulan tugas</div>
-            <div><span>✓</span> Gratis untuk warga sekolah</div>
-        </div>
-
-    </section>
-
-    <!-- AUTHENTICATION CARD -->
-
-    <section class="auth-card" id="auth">
-
-        <div class="auth-header">
-            <h2 id="formTitle">Masuk ke SLearning</h2>
-            <p id="formSubtitle">
-                Masuk untuk melanjutkan aktivitas belajarmu.
-            </p>
-        </div>
-
-        <?php if ($error): ?>
-            <div class="alert error">
-                <?= htmlspecialchars($error) ?>
-            </div>
-        <?php endif; ?>
-
-        <?php if ($success): ?>
-            <div class="alert success">
-                <?= htmlspecialchars($success) ?>
-            </div>
-        <?php endif; ?>
-
-        <!-- TABS -->
-
-        <div class="tabs">
-
-            <button
-                type="button"
-                id="loginTab"
-                class="tab"
-                onclick="setMode('login')">
-                Masuk
-            </button>
-
-            <button
-                type="button"
-                id="registerTab"
-                class="tab"
-                onclick="setMode('register')">
-                Daftar
-            </button>
-
-        </div>
-
-        <!-- FORM -->
-
-        <form method="POST" action="" id="authForm">
-
-            <input
-                type="hidden"
-                name="mode"
-                id="mode"
-                value="<?= htmlspecialchars($mode) ?>">
-
-            <!-- REGISTER FIELDS -->
-
-            <div id="registerFields">
-
-                <!-- DAFTAR SEBAGAI -->
-
-                <div class="form-group">
-
-                    <label for="jenis">
-                        Daftar sebagai apa?
-                    </label>
-
-                    <select
-                        name="jenis"
-                        id="jenis"
-                        class="select-box">
-
-                        <option value="waka"
-                            <?= $jenis === "waka" ? "selected" : "" ?>>
-                            Waka (Wakil Kepala Sekolah)
-                        </option>
-
-                        <option value="guru"
-                            <?= $jenis === "guru" ? "selected" : "" ?>>
-                            Guru
-                        </option>
-
-                        <option value="murid"
-                            <?= $jenis === "murid" ? "selected" : "" ?>>
-                            Murid
-                        </option>
-
-                    </select>
-
-                </div>
-
-                <!-- KODE KHUSUS UNTUK PENDAFTARAN WAKA/GURU -->
-                <div class="form-group" id="registrationCodeGroup" style="display:none;">
-                    <label for="registration_code">Kode Pendaftaran Khusus</label>
-                    <div class="input-box">
-                        <span class="input-icon">🔐</span>
-                        <input type="password" name="registration_code" id="registration_code"
-                               placeholder="Masukkan kode dari pengelola" autocomplete="off">
-                    </div>
-                    <small style="display:block;margin-top:7px;color:#71806d;font-size:12px;line-height:1.5;">
-                        Wajib untuk Waka dan Guru. Minta kode kepada pengelola sekolah.
-                    </small>
-                </div>
-
-                <!-- NAMA -->
-
-                <div class="form-group">
-
-                    <label for="nama">
-                        Nama Lengkap
-                    </label>
-
-                    <div class="input-box">
-                        <span class="input-icon">♙</span>
-
-                        <input
-                            type="text"
-                            name="nama"
-                            id="nama"
-                            placeholder="Masukkan nama lengkap"
-                            value="<?= htmlspecialchars($nama) ?>">
-                    </div>
-
-                </div>
-
-                <!-- EMAIL -->
-
-                <div class="form-group">
-
-                    <label for="email">
-                        Gmail / Email
-                    </label>
-
-                    <div class="input-box">
-                        <span class="input-icon">✉</span>
-
-                        <input
-                            type="email"
-                            name="email"
-                            id="email"
-                            placeholder="nama@gmail.com"
-                            value="<?= htmlspecialchars($email) ?>">
-                    </div>
-
-                </div>
-
-            </div>
-
-            <!-- USERNAME -->
-
-            <div class="form-group">
-
-                <label for="username">
-                    Username
-                </label>
-
-                <div class="input-box">
-                    <span class="input-icon">♙</span>
-
-                    <input
-                        type="text"
-                        name="username"
-                        id="username"
-                        placeholder="Masukkan username"
-                        autocomplete="username"
-                        value="<?= htmlspecialchars($username) ?>"
-                        required>
-                </div>
-
-            </div>
-
-            <!-- PASSWORD -->
-
-            <div class="form-group">
-
-                <label for="password">
-                    Password
-                </label>
-
-                <div class="input-box">
-                    <span class="input-icon">🔒</span>
-
-                    <input
-                        type="password"
-                        name="password"
-                        id="password"
-                        placeholder="Masukkan password"
-                        required>
-
-                    <button
-                        type="button"
-                        class="password-toggle"
-                        onclick="togglePassword('password')">
-                        👁
-                    </button>
-                </div>
-
-            </div>
-
-            <!-- CONFIRM PASSWORD -->
-
-            <div class="form-group" id="confirmGroup">
-
-                <label for="confirm_password">
-                    Konfirmasi Password
-                </label>
-
-                <div class="input-box">
-                    <span class="input-icon">🔒</span>
-
-                    <input
-                        type="password"
-                        name="confirm_password"
-                        id="confirm_password"
-                        placeholder="Ulangi password">
-
-                    <button
-                        type="button"
-                        class="password-toggle"
-                        onclick="togglePassword('confirm_password')">
-                        👁
-                    </button>
-                </div>
-
-            </div>
-
-            <!-- LOGIN OPTIONS -->
-
-            <div class="form-options" id="loginOptions">
-
-                <label class="remember">
-                    <input type="checkbox" name="remember" value="1" <?= isset($_COOKIE["slearning_remember"]) ? "checked" : "" ?>>
-                    Ingat saya
-                </label>
-
-                <a href="#" class="forgot">
-                    Lupa password?
-                </a>
-
-            </div>
-
-            <!-- SUBMIT -->
-
-            <button
-                type="submit"
-                class="submit-btn"
-                id="submitBtn">
-
-                Masuk
-
-            </button>
-
-        </form>
-
-        <!-- FOOTER -->
-
-        <div class="auth-footer">
-
-            <span id="footerText">
-                Belum punya akun?
-            </span>
-
-            <button
-                type="button"
-                id="footerButton"
-                onclick="setMode('register')">
-
-                Daftar gratis
-
-            </button>
-
-        </div>
-
-        <div class="security">
-            🛡 Akses khusus warga SMK Negeri 7 Batam
-        </div>
-
-    </section>
-
+<main class="container">
+<?php if ($flash): ?>
+  <div class="alert <?= ($flash['tipe'] ?? '')==='error'?'error':'' ?>"><?= e($flash['pesan']) ?></div>
+<?php endif; ?>
+
+<?php if ($page === 'kelas'): ?>
+  <section class="card">
+    <h2>Kelas Saya</h2>
+    <p class="muted">Masukkan kode gabung dari guru untuk meminta izin masuk kelas.</p>
+    <form method="post">
+      <label>Kode Gabung</label><input name="kode_gabung" placeholder="Masukkan kode kelas" required>
+      <button class="btn" name="gabung_kelas">Gabung Kelas</button>
+    </form>
+  </section>
+  <div class="grid">
+  <?php if (!$kelasSaya): ?><div class="card">Kamu belum bergabung dengan kelas mana pun.</div><?php endif; ?>
+  <?php foreach ($kelasSaya as $k): ?>
+    <div class="card">
+      <span class="badge"><?= e(ucfirst($k['status_izin'] ?? 'disetujui')) ?></span>
+      <h3><?= e($k['nama_kelas']) ?></h3><p class="muted">Guru: <?= e($k['nama_guru'] ?? '-') ?></p>
+      <a class="btn" href="murid.php?page=detail_kelas&id=<?= (int)$k['id'] ?>">Lihat Kelas</a>
+    </div>
+  <?php endforeach; ?>
+  </div>
+
+<?php elseif ($page === 'detail_kelas'): ?>
+  <?php
+  $kid=(int)($_GET['id']??0);
+  $detail=stmt_row($koneksi,"SELECT k.*,l.nama nama_guru,COALESCE(ak.status,'disetujui') status_izin FROM kelas k JOIN anggota_kelas ak ON ak.kelas_id=k.id LEFT JOIN login l ON l.id=k.guru_id WHERE k.id=? AND ak.user_id=?",'ii',[$kid,$uid]);
+  ?>
+  <div class="card">
+  <?php if (!$detail): ?><h2>Kelas tidak ditemukan</h2>
+  <?php elseif ($detail['status_izin']==='pending'): ?>
+    <h2>⏳ Sedang Menunggu Izin Guru</h2><p>Permintaan bergabung ke kelas <b><?= e($detail['nama_kelas']) ?></b> sudah dikirim. Tunggu persetujuan guru.</p>
+    <a class="btn btn-light" href="murid.php?page=kelas">Kembali</a>
+  <?php elseif ($detail['status_izin']==='ditolak'): ?>
+    <h2>Permintaan Ditolak</h2><p>Guru belum menyetujui permintaan masuk kelas ini.</p><a class="btn" href="murid.php?page=kelas">Kembali</a>
+  <?php else: ?>
+    <h2><?= e($detail['nama_kelas']) ?></h2><p class="muted">Guru pengampu: <?= e($detail['nama_guru']??'-') ?></p>
+    <h3>Tugas di kelas</h3>
+    <?php $daftar=stmt_rows($koneksi,"SELECT id,judul_tugas,deadline FROM tugas WHERE kelas_id=? ORDER BY id DESC",'i',[$kid]); ?>
+    <?php if (!$daftar): ?><p class="muted">Belum ada tugas.</p><?php else: foreach($daftar as $t): ?>
+      <p><?= e($t['judul_tugas']) ?> — <?= e(tanggal_id($t['deadline']??'',false)) ?></p>
+    <?php endforeach; endif; ?>
+  <?php endif; ?>
+  </div>
+
+<?php elseif ($page === 'absensi'): ?>
+  <div class="card"><h2>Absensi Kehadiran</h2>
+  <?php $absen=$inKelas!=='0'?stmt_rows($koneksi,"SELECT a.id,a.judul_absensi,a.tanggal,k.nama_kelas,ah.status FROM absensi a JOIN kelas k ON k.id=a.kelas_id LEFT JOIN absensi_hadir ah ON ah.absensi_id=a.id AND ah.user_id=? WHERE a.kelas_id IN ($inKelas) ORDER BY a.tanggal DESC",'i',[$uid]):[]; ?>
+  <?php if (!$absen): ?><p class="muted">Belum ada sesi absensi.</p><?php else: foreach($absen as $a): ?>
+    <div style="padding:14px 0;border-bottom:1px solid var(--line)"><b><?= e($a['judul_absensi']) ?></b><p class="muted"><?= e($a['nama_kelas']) ?> · <?= e(tanggal_id($a['tanggal'])) ?></p>
+    <?php if ($a['status']): ?><span class="badge">Sudah absen: <?= e($a['status']) ?></span><?php else: ?>
+      <form method="post"><input type="hidden" name="absensi_id" value="<?= (int)$a['id'] ?>"><select name="status"><option value="hadir">Hadir</option><option value="izin">Izin</option><option value="sakit">Sakit</option></select><button class="btn" name="isi_absen">Kirim Absen</button></form>
+    <?php endif; ?></div>
+  <?php endforeach; endif; ?></div>
+
+<?php elseif ($page === 'tugas'): ?>
+  <div class="card"><h2>Daftar Tugas</h2>
+  <?php $tugas=$inKelas!=='0'?stmt_rows($koneksi,"SELECT t.id,t.judul_tugas,t.deadline,k.nama_kelas,pt.nama_file FROM tugas t JOIN kelas k ON k.id=t.kelas_id LEFT JOIN pengumpulan_tugas pt ON pt.tugas_id=t.id AND pt.user_id=? WHERE t.kelas_id IN ($inKelas) ORDER BY t.deadline ASC",'i',[$uid]):[]; ?>
+  <?php if (!$tugas): ?><p class="muted">Belum ada tugas tersedia.</p><?php else: foreach($tugas as $t): ?>
+    <div style="padding:14px 0;border-bottom:1px solid var(--line)"><b><?= e($t['judul_tugas']) ?></b><p class="muted"><?= e($t['nama_kelas']) ?> · Deadline: <?= e(tanggal_id($t['deadline']??'',false)) ?></p>
+    <span class="badge"><?= $t['nama_file']?'Sudah dikumpulkan':'Belum dikumpulkan' ?></span>
+    <form method="post" enctype="multipart/form-data"><input type="hidden" name="tugas_id" value="<?= (int)$t['id'] ?>"><input type="file" name="file_tugas" required><button class="btn" name="kumpulkan_tugas">Kumpulkan Tugas</button></form></div>
+  <?php endforeach; endif; ?></div>
+
+<?php elseif ($page === 'quiz'): ?>
+  <div class="card"><h2>Quiz Tersedia</h2>
+  <?php $quiz=$inKelas!=='0'?stmt_rows($koneksi,"SELECT q.id,q.judul,k.nama_kelas FROM quiz q JOIN kelas k ON k.id=q.kelas_id WHERE q.kelas_id IN ($inKelas) ORDER BY q.id DESC"):[]; ?>
+  <?php if (!$quiz): ?><p class="muted">Belum ada quiz tersedia.</p><?php else: foreach($quiz as $q): ?>
+    <div style="padding:12px 0;border-bottom:1px solid var(--line)"><b><?= e($q['judul']) ?></b><p class="muted"><?= e($q['nama_kelas']) ?></p><a class="btn" href="murid.php?page=kerjakan_quiz&quiz_id=<?= (int)$q['id'] ?>">Buka Quiz</a></div>
+  <?php endforeach; endif; ?></div>
+
+<?php elseif ($page === 'kerjakan_quiz'): ?>
+  <?php
+  $quizDetail = $quizId > 0 ? stmt_row($koneksi, "SELECT q.*,k.nama_kelas FROM quiz q JOIN kelas k ON k.id=q.kelas_id JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE q.id=? AND ak.user_id=? AND COALESCE(ak.status,'disetujui')='disetujui' LIMIT 1", 'ii', [$quizId,$uid]) : null;
+  ?>
+  <div class="card">
+    <?php if (!$quizDetail): ?>
+      <h2>Quiz tidak ditemukan</h2><p class="muted">Quiz tidak tersedia atau kamu belum mendapat izin masuk kelas.</p>
+    <?php else: ?>
+      <h2><?= e($quizDetail['judul'] ?? 'Quiz') ?></h2>
+      <p class="muted">Kelas: <?= e($quizDetail['nama_kelas']) ?></p>
+      <p>Quiz ini terdaftar di kelas yang kamu ikuti. Tampilan pengerjaan soal perlu disesuaikan dengan struktur tabel soal dan jawaban pada database proyek.</p>
+      <a class="btn btn-light" href="murid.php?page=quiz">Kembali ke daftar quiz</a>
+    <?php endif; ?>
+  </div>
+
+<?php elseif ($page === 'notif' || $page === 'notifikasi'): ?>
+  <div class="card"><h2>Pemberitahuan</h2>
+  <?php if (!$notifikasi): ?><p class="muted">Belum ada pemberitahuan baru.</p><?php else: foreach($notifikasi as $n): ?>
+    <p><span class="badge"><?= e(strtoupper($n['tipe'])) ?></span> <?= e($n['judul']) ?> <span class="muted"><?= e(tanggal_id($n['tanggal'])) ?></span></p>
+  <?php endforeach; endif; ?></div>
+
+<?php elseif ($page === 'profil'): ?>
+  <div class="card"><h2>Pengaturan Profil</h2>
+  <form method="post" enctype="multipart/form-data">
+    <label>Nama</label><input name="nama" value="<?= e($user['nama']) ?>" required>
+    <label>Email</label><input type="email" name="email" value="<?= e($user['email']) ?>" required>
+    <label>Foto Profil</label><input type="file" name="foto" accept=".jpg,.jpeg,.png,.gif">
+    <label>Password Lama (isi jika ingin mengganti password)</label><input type="password" name="password_lama">
+    <label>Password Baru</label><input type="password" name="password_baru" minlength="8">
+    <button class="btn" name="update_profil">Simpan Profil</button>
+  </form></div>
+
+<?php elseif ($page === 'laporan'): ?>
+  <div class="card"><h2>🚩 Lapor Pelanggaran</h2>
+  <p class="muted">Laporan akan diteruskan kepada pengelola sekolah.</p>
+  <form method="post">
+    <label>Pengguna yang dilaporkan</label>
+    <select name="terlapor_id" required><option value="">Pilih pengguna</option>
+    <?php foreach(stmt_rows($koneksi,"SELECT id,nama,jenis FROM login WHERE jenis IN ('guru','murid') AND id<>? ORDER BY nama",'i',[$uid]) as $x): ?>
+      <option value="<?= (int)$x['id'] ?>"><?= e($x['nama']) ?> (<?= e($x['jenis']) ?>)</option>
+    <?php endforeach; ?></select>
+    <label>Kategori</label><select name="kategori" required><option value="">Pilih kategori</option><option>Perkataan Kasar / Bullying</option><option>Pelecehan / Tindak Kekerasan</option><option>Kecurangan / Menyontek</option><option>Sikap Tidak Profesional</option><option>Lainnya</option></select>
+    <label>Keterangan</label><textarea name="deskripsi" rows="4" required></textarea>
+    <button class="btn" name="kirim_laporan">Kirim Laporan</button>
+  </form>
+  <h3>Riwayat Laporan Saya</h3>
+  <?php foreach(stmt_rows($koneksi,"SELECT lp.*,l.nama,l.jenis FROM laporan_pengguna lp JOIN login l ON l.id=lp.terlapor_id WHERE lp.pelapor_id=? ORDER BY lp.created_at DESC",'i',[$uid]) as $lp): ?>
+    <p><b><?= e($lp['nama']) ?></b> — <?= e($lp['kategori']) ?> <span class="badge"><?= e($lp['status']) ?></span></p>
+  <?php endforeach; ?></div>
+
+<?php else: ?>
+  <div class="card"><h1>Halo, <?= e($nama_murid) ?> 👋</h1><p class="muted">Selamat datang di SLearning SMK Negeri 7 Batam.</p></div>
+  <div class="grid">
+    <div class="card stat"><span class="stat-icon">📝</span><div><h2><?= $statTugas ?></h2><p class="muted">Tugas Aktif</p></div></div>
+    <div class="card stat"><span class="stat-icon">🎮</span><div><h2><?= $statQuiz ?></h2><p class="muted">Quiz Tersedia</p></div></div>
+    <div class="card stat"><span class="stat-icon">🏫</span><div><h2><?= count($kelasSaya) ?></h2><p class="muted">Kelas Diikuti</p></div></div>
+  </div>
+  <div class="card"><h2>Aktivitas Terbaru</h2>
+  <?php if (!$notifikasi): ?><p class="muted">Belum ada aktivitas baru.</p><?php else: foreach($notifikasi as $n): ?>
+    <p><span class="badge"><?= e(strtoupper($n['tipe'])) ?></span> <?= e($n['judul']) ?> · <span class="muted"><?= e(tanggal_id($n['tanggal'])) ?></span></p>
+  <?php endforeach; endif; ?></div>
+<?php endif; ?>
 </main>
-
-<script>
-
-// MODE AWAL
-let currentMode = <?= json_encode($mode) ?>;
-
-
-// =====================================
-// GANTI LOGIN / REGISTER
-// =====================================
-
-function setMode(mode) {
-
-    currentMode = mode;
-
-    document.getElementById("mode").value = mode;
-
-    const loginTab = document.getElementById("loginTab");
-    const registerTab = document.getElementById("registerTab");
-
-    const registerFields = document.getElementById("registerFields");
-    const confirmGroup = document.getElementById("confirmGroup");
-    const loginOptions = document.getElementById("loginOptions");
-
-    const nama = document.getElementById("nama");
-    const email = document.getElementById("email");
-    const confirm = document.getElementById("confirm_password");
-    const registrationCodeGroup = document.getElementById("registrationCodeGroup");
-    const registrationCode = document.getElementById("registration_code");
-
-    const title = document.getElementById("formTitle");
-    const subtitle = document.getElementById("formSubtitle");
-    const submit = document.getElementById("submitBtn");
-
-    const footerText = document.getElementById("footerText");
-    const footerButton = document.getElementById("footerButton");
-
-    loginTab.classList.toggle("active", mode === "login");
-    registerTab.classList.toggle("active", mode === "register");
-
-    if (mode === "login") {
-
-        title.textContent = "Masuk ke SLearning";
-        subtitle.textContent =
-            "Masuk menggunakan username dan password.";
-
-        registerFields.style.display = "none";
-        confirmGroup.style.display = "none";
-        registrationCodeGroup.style.display = "none";
-        registrationCode.required = false;
-        loginOptions.style.display = "flex";
-
-        nama.required = false;
-        email.required = false;
-        confirm.required = false;
-
-        submit.textContent = "Masuk";
-
-        footerText.textContent = "Belum punya akun?";
-        footerButton.textContent = "Daftar gratis";
-
-        footerButton.onclick = function() {
-            setMode("register");
-        };
-
-        document.getElementById("password").autocomplete =
-            "current-password";
-
-    } else {
-
-        title.textContent = "Buat Akun SLearning";
-        subtitle.textContent =
-            "Lengkapi data berikut untuk mendaftar.";
-
-        registerFields.style.display = "block";
-        confirmGroup.style.display = "block";
-        loginOptions.style.display = "none";
-        updateRegistrationCodeField();
-
-        nama.required = true;
-        email.required = true;
-        confirm.required = true;
-
-        submit.textContent = "Daftar Sekarang →";
-
-        footerText.textContent = "Sudah punya akun?";
-        footerButton.textContent = "Masuk di sini";
-
-        footerButton.onclick = function() {
-            setMode("login");
-        };
-
-        document.getElementById("password").autocomplete =
-            "new-password";
-    }
-}
-
-
-// Kode khusus hanya muncul saat mendaftar sebagai Waka atau Guru.
-function updateRegistrationCodeField() {
-    const selectedJenis = document.getElementById("jenis").value;
-    const group = document.getElementById("registrationCodeGroup");
-    const codeInput = document.getElementById("registration_code");
-    const needsCode = selectedJenis === "waka" || selectedJenis === "guru";
-    group.style.display = (currentMode === "register" && needsCode) ? "block" : "none";
-    codeInput.required = currentMode === "register" && needsCode;
-}
-document.getElementById("jenis").addEventListener("change", updateRegistrationCodeField);
-
-// =====================================
-// TAMPILKAN PASSWORD
-// =====================================
-
-function togglePassword(id) {
-
-    const input = document.getElementById(id);
-
-    input.type =
-        input.type === "password"
-        ? "text"
-        : "password";
-}
-
-
-// =====================================
-// INITIAL DISPLAY
-// =====================================
-
-setMode(currentMode);
-
-</script>
-
 </body>
 </html>
