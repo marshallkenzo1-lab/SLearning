@@ -3,7 +3,7 @@
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
 
-$tables = ['login','kelas','anggota_kelas','tugas','pengumpulan_tugas','absensi','absensi_hadir','quiz','quiz_soal','quiz_hasil'];
+$tables = ['login','kelas','anggota_kelas','tugas','pengumpulan_tugas','absensi','absensi_hadir','quiz','quiz_soal','quiz_hasil','report_murid','laporan_pengguna'];
 $info = [];
 foreach ($tables as $t) {
     $q = @mysqli_query($koneksi, "SELECT COUNT(*) AS c FROM `$t`");
@@ -44,7 +44,7 @@ $db_ok = $koneksi ? true : false;
     <h3 style="font-size:17px;margin-bottom:12px">Tabel database (slearning_db)</h3>
     <div class="table-wrap"><table class="data"><tr><th>Tabel</th><th>Fungsi</th><th>Jumlah baris</th><th>Status</th></tr>
     <?php
-    $desc = ['login'=>'Akun guru & murid','kelas'=>'Ruang kelas','anggota_kelas'=>'Keanggotaan kelas','tugas'=>'Tugas dari guru','pengumpulan_tugas'=>'File kumpul + nilai','absensi'=>'Sesi absensi','absensi_hadir'=>'Kehadiran murid','quiz'=>'Quiz dari guru','quiz_soal'=>'Soal pilihan ganda','quiz_hasil'=>'Hasil & skor murid'];
+    $desc = ['login'=>'Akun guru & murid','kelas'=>'Ruang kelas','anggota_kelas'=>'Keanggotaan kelas','tugas'=>'Tugas dari guru','pengumpulan_tugas'=>'File kumpul + nilai','absensi'=>'Sesi absensi','absensi_hadir'=>'Kehadiran murid','quiz'=>'Quiz dari guru','quiz_soal'=>'Soal pilihan ganda','quiz_hasil'=>'Hasil & skor murid','report_murid'=>'Report murid oleh guru','laporan_pengguna'=>'Laporan antar pengguna'];
     foreach ($tables as $t): $c = $info[$t]; ?>
       <tr><td><strong><?= e($t) ?></strong></td><td><?= e($desc[$t]) ?></td><td><?= $c===null?'—':(int)$c ?></td><td><?php if($c===null): ?><span class="pill red">Hilang</span><?php else: ?><span class="pill ok">Siap</span><?php endif; ?></td></tr>
     <?php endforeach; ?>

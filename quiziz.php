@@ -4,22 +4,13 @@ session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
 
-if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit; }
-$uid = (int)$_SESSION['user_id'];
-$s = mysqli_prepare($koneksi, "SELECT id, nama, username, email, jenis, level FROM login WHERE id=? LIMIT 1");
-mysqli_stmt_bind_param($s,"i",$uid); mysqli_stmt_execute($s);
-$user = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-if (!$user) { header("Location: logout.php"); exit; }
+$user = session_guard($koneksi);
+$uid = (int)$user['id'];
 $jenis = $user['jenis']; $nama = $user['nama'];
 $dashboard = ($jenis==='guru') ? 'guru.php' : 'murid.php';
 
-// Kolom gambar soal dibuat otomatis bila belum ada.
-$__imgcol = @mysqli_query($koneksi, "SHOW COLUMNS FROM quiz_soal LIKE 'gambar'");
-if ($__imgcol && mysqli_num_rows($__imgcol) === 0) @mysqli_query($koneksi, "ALTER TABLE quiz_soal ADD COLUMN gambar VARCHAR(255) NULL");
-
-// kolom jawaban untuk review (tambah bila belum ada)
-$__c = @mysqli_query($koneksi, "SHOW COLUMNS FROM quiz_hasil LIKE 'jawaban'");
-if ($__c && mysqli_num_rows($__c)===0) @mysqli_query($koneksi, "ALTER TABLE quiz_hasil ADD COLUMN jawaban TEXT NULL");
+// Migrasi kolom quiz_soal.gambar dan quiz_hasil.jawaban sudah
+// otomatis ditangani oleh config/koneksi.php.
 
 $qid = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $lihat_hasil = isset($_GET['hasil']);

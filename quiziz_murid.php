@@ -4,8 +4,9 @@ session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
 
-// Pastikan hanya murid yang bisa mengakses halaman ini
-if (!isset($_SESSION['user_id']) || ($_SESSION['jenis'] ?? '') !== 'murid') { 
+// Validasi sesi + hanya murid yang boleh mengerjakan quiz
+session_guard($koneksi);
+if (($_SESSION['jenis'] ?? '') !== 'murid') { 
     header("Location: login.php"); exit; 
 }
 

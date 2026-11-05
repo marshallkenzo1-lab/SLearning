@@ -1,4 +1,9 @@
 <?php
+// Waktu mengikuti WIB agar tanggal registrasi/aktivitas sesuai tanggal nyata (no. 8).
+date_default_timezone_set('Asia/Jakarta');
+// Perbaikan sesi login (no. 11): cookie sesi tidak bisa dibaca JS & ID sesi asal tidak diterima.
+ini_set('session.use_strict_mode', '1');
+ini_set('session.cookie_httponly', '1');
 session_start();
 
 // Keluar manual: login.php?logout=1
@@ -43,7 +48,7 @@ $nis = ""; $loginJenis = $_POST["login_type"] ?? "murid"; $loginNama = trim($_PO
 if (!in_array($loginJenis, ["murid", "guru", "waka", "admin"], true)) $loginJenis = "murid";
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbuser, $dbpass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbuser, $dbpass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+07:00'"]);
     $pdo->exec("CREATE TABLE IF NOT EXISTS login (
         id INT AUTO_INCREMENT PRIMARY KEY, nama VARCHAR(100) NOT NULL,
         username VARCHAR(50) NOT NULL UNIQUE, email VARCHAR(100) NULL UNIQUE,
@@ -57,6 +62,9 @@ try {
     $cols = $pdo->query("SHOW COLUMNS FROM login")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array("nis", $cols, true)) {
         $pdo->exec("ALTER TABLE login ADD COLUMN nis VARCHAR(30) NULL UNIQUE");
+    }
+    if (!in_array("foto", $cols, true)) {
+        $pdo->exec("ALTER TABLE login ADD COLUMN foto VARCHAR(255) NULL");
     }
     if (in_array("email", $cols, true)) {
         $pdo->exec("ALTER TABLE login MODIFY email VARCHAR(100) NULL");

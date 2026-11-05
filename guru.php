@@ -4,34 +4,16 @@ session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
 
-if (!isset($_SESSION['user_id']) || ($_SESSION['jenis'] ?? '') === 'murid') { header("Location: login.php"); exit; }
+// Validasi sesi ke database (perbaikan no. 11): akun harus masih ada & tidak basi.
+session_guard($koneksi);
+if (($_SESSION['jenis'] ?? '') === 'murid') { header("Location: murid.php"); exit; }
 $user_id = (int)$_SESSION['user_id'];
 
 $page = $_GET['page'] ?? 'beranda';
 $detail_kelas_id = (int)($_GET['id'] ?? 0);
 
-// Auto-migration (Jika tabel belum ada kolom status untuk fitur undangan)
-$cekStatusAK = @mysqli_query($koneksi, "SHOW COLUMNS FROM anggota_kelas LIKE 'status'");
-if ($cekStatusAK && mysqli_num_rows($cekStatusAK) === 0) {
-    @mysqli_query($koneksi, "ALTER TABLE anggota_kelas ADD COLUMN status ENUM('pending','disetujui','ditolak') NOT NULL DEFAULT 'disetujui'");
-}
-// Kolom gambar untuk soal Quiziz
-$cekGambarSoal = @mysqli_query($koneksi, "SHOW COLUMNS FROM quiz_soal LIKE 'gambar'");
-if ($cekGambarSoal && mysqli_num_rows($cekGambarSoal) === 0) {
-    @mysqli_query($koneksi, "ALTER TABLE quiz_soal ADD COLUMN gambar VARCHAR(255) NULL");
-}
-
-// Auto-migration untuk fitur report murid
-$cekTabelReport = @mysqli_query($koneksi, "SHOW TABLES LIKE 'report_murid'");
-if ($cekTabelReport && mysqli_num_rows($cekTabelReport) === 0) {
-    @mysqli_query($koneksi, "CREATE TABLE report_murid (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        guru_id INT NOT NULL,
-        murid_id INT NOT NULL,
-        alasan TEXT NOT NULL,
-        tanggal TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )");
-}
+// Auto-migrasi skema (anggota_kelas.status, quiz_soal.gambar, report_murid, dll.)
+// sudah otomatis ditangani oleh config/koneksi.php.
 
 function uploadGambarSoal($field = 'gambar_soal') {
     if (!isset($_FILES[$field]) || $_FILES[$field]['error'] === UPLOAD_ERR_NO_FILE) return [true, ''];
@@ -176,6 +158,25 @@ if (isset($_GET['ekspor_rekap'])) {
     http_response_code(400); exit('Format ekspor tidak valid.');
 }
 
+// Waktu: pakai WIB juga untuk halaman guru (tanggal rekap/label konsisten dgn koneksi.php).
+function tahunAjaranNow(): string {
+    $y = (int)date('Y');
+    if ((int)date('n') < 7) $y--; // sebelum Juli = masih TA mulai tahun lalu
+    return $y . '/' . ($y + 1);
+}
+
+// Validasi nama kelas agar tidak asal (dipakai tambah & ubah kelas).
+// Mengembalikan pesan error, atau string kosong '' bila valid.
+function validasiNamaKelas(string $nama): string {
+    if (strlen($nama) < 4) return 'Gagal: Nama kelas terlalu pendek. Minimal 4 karakter.';
+    if (preg_match('/(.)\1{3,}/', $nama)) return 'Gagal: Nama kelas tidak valid. Hindari 1 karakter yang diulang berurutan.';
+    if (preg_match('/(.{2,})\1{2,}/i', $nama)) return 'Gagal: Nama kelas terdeteksi tidak bermakna (mengulang pola kata yang sama).';
+    if (preg_match('/[bcdfghjklmnpqrstvwxyz]{5,}/i', $nama)) return 'Gagal: Nama kelas tidak valid. Terdeteksi sebagai ketikan asal.';
+    if (strlen($nama) > 15 && strpos($nama, ' ') === false) return 'Gagal: Nama kelas lebih dari 15 karakter harus memiliki spasi.';
+    if (!preg_match('/^[a-zA-Z0-9\s\-\.\,]+$/', $nama)) return 'Gagal: Nama kelas hanya boleh berisi huruf, angka, spasi, titik, koma, atau strip (-).';
+    return '';
+}
+
 // ---------- PROSES AKSI POST ----------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
     $aksi = $_POST['aksi'];
@@ -226,31 +227,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
     // AKSI TAMBAH KELAS DENGAN VALIDASI
     if ($aksi === 'tambah_kelas') {
         $nama = trim($_POST['nama_kelas_baru'] ?? '');
-        
-        if (strlen($nama) < 4) {
-            flash_set('Gagal: Nama kelas terlalu pendek. Minimal 4 karakter.', 'error');
-        } 
-        elseif (preg_match('/(.)\1{3,}/', $nama)) {
-            flash_set('Gagal: Nama kelas tidak valid. Hindari 1 karakter yang diulang berurutan.', 'error');
-        } 
-        elseif (preg_match('/(.{2,})\1{2,}/i', $nama)) {
-            flash_set('Gagal: Nama kelas terdeteksi tidak bermakna (mengulang pola kata yang sama).', 'error');
-        }
-        elseif (preg_match('/[bcdfghjklmnpqrstvwxyz]{5,}/i', $nama)) {
-            flash_set('Gagal: Nama kelas tidak valid. Terdeteksi sebagai ketikan asal.', 'error');
-        }
-        elseif (strlen($nama) > 15 && strpos($nama, ' ') === false) {
-            flash_set('Gagal: Nama kelas lebih dari 15 karakter harus memiliki spasi.', 'error');
-        }
-        elseif (!preg_match('/^[a-zA-Z0-9\s\-\.\,]+$/', $nama)) {
-            flash_set('Gagal: Nama kelas hanya boleh berisi huruf, angka, spasi, titik, koma, atau strip (-).', 'error');
-        }
-        else {
+        $err = validasiNamaKelas($nama);
+        if ($err !== '') {
+            flash_set($err, 'error');
+        } else {
             $kode = 'KLS-'.strtoupper(substr(md5(mt_rand().time()),0,5));
-            $s = mysqli_prepare($koneksi, "INSERT INTO kelas (nama_kelas, kode_gabung, guru_id) VALUES (?,?,?)");
-            mysqli_stmt_bind_param($s, "ssi", $nama, $kode, $user_id);
+            $s = mysqli_prepare($koneksi, "INSERT INTO kelas (nama_kelas, kode_gabung, guru_id, tahun_ajaran) VALUES (?,?,?,?)");
+            $ta_baru = tahunAjaranNow();
+            mysqli_stmt_bind_param($s, "ssis", $nama, $kode, $user_id, $ta_baru);
             if (mysqli_stmt_execute($s)) {
-                flash_set('Kelas "'.$nama.'" berhasil dibuat.');
+                flash_set('Kelas "'.$nama.'" berhasil dibuat untuk tahun ajaran '.$ta_baru.'.');
             } else {
                 flash_set('Gagal membuat kelas, silakan coba lagi.', 'error');
             }
@@ -263,6 +249,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['aksi'])) {
         $id = (int)($_POST['kelas_id'] ?? 0);
         mysqli_query($koneksi, "DELETE FROM kelas WHERE id=$id AND guru_id=$user_id");
         flash_set('Kelas berhasil dihapus.');
+        header("Location: guru.php?page=".$target_page); exit;
+    }
+
+    // UBAH NAMA KELAS & TAHUN AJARAN (revisi no. 12: perubahan kelas per tahun)
+    if ($aksi === 'ubah_kelas') {
+        $id  = (int)($_POST['kelas_id'] ?? 0);
+        $nama = trim($_POST['nama_kelas'] ?? '');
+        $ta   = trim($_POST['tahun_ajaran'] ?? '');
+        if (!preg_match('/^\d{4}\/\d{4}$/', $ta)) $ta = tahunAjaranNow();
+        $err = validasiNamaKelas($nama);
+        if ($err !== '') {
+            flash_set($err, 'error');
+        } else {
+            $st = mysqli_prepare($koneksi, "UPDATE kelas SET nama_kelas = ?, tahun_ajaran = ? WHERE id = ? AND guru_id = ?");
+            mysqli_stmt_bind_param($st, "ssii", $nama, $ta, $id, $user_id);
+            $ok = mysqli_stmt_execute($st);
+            mysqli_stmt_close($st);
+            flash_set($ok ? 'Nama kelas & tahun ajaran berhasil diperbarui.' : 'Gagal memperbarui kelas.', $ok ? 'success' : 'error');
+        }
+        header("Location: guru.php?page=".$target_page); exit;
+    }
+
+    // ARSIPKAN / AKTIFKAN KELAS (revisi no. 12)
+    if ($aksi === 'toggle_arsip') {
+        $id = (int)($_POST['kelas_id'] ?? 0);
+        mysqli_query($koneksi, "UPDATE kelas SET arsip = 1 - arsip WHERE id=$id AND guru_id=$user_id");
+        flash_set('Status arsip kelas diperbarui.');
         header("Location: guru.php?page=".$target_page); exit;
     }
 
@@ -467,7 +480,7 @@ $email_guru = $user['email'] ?? '';
 
 // Data Pendukung Dasbor
 $list_kelas = [];
-$r_kls = mysqli_query($koneksi, "SELECT id AS id_kelas, nama_kelas, kode_gabung, (SELECT COUNT(*) FROM anggota_kelas ak WHERE ak.kelas_id=k.id AND COALESCE(ak.status, 'disetujui') = 'disetujui') AS jml_murid FROM kelas k WHERE k.guru_id=$user_id ORDER BY k.id DESC");
+$r_kls = mysqli_query($koneksi, "SELECT id AS id_kelas, nama_kelas, tahun_ajaran, arsip, kode_gabung, (SELECT COUNT(*) FROM anggota_kelas ak WHERE ak.kelas_id=k.id AND COALESCE(ak.status, 'disetujui') = 'disetujui') AS jml_murid FROM kelas k WHERE k.guru_id=$user_id ORDER BY k.arsip ASC, k.id DESC");
 if($r_kls) { while ($r = mysqli_fetch_assoc($r_kls)) $list_kelas[] = $r; }
 
 $jml_kelas = count($list_kelas);
@@ -999,6 +1012,9 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
                 <?= (int)$kls['jml_murid'] ?> Murid Tergabung
               </span>
+              <span class="murid-count" style="color:<?= !empty($kls['arsip']) ? '#E07A5F' : 'var(--sage-600)' ?>">
+                TA <?= e($kls['tahun_ajaran'] ?? '-') ?><?= !empty($kls['arsip']) ? ' • ARSIP' : '' ?>
+              </span>
             </div>
           </div>
 
@@ -1037,6 +1053,27 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
               </button>
             </form>
           </div>
+
+          <!-- Perubahan kelas per tahun: ubah nama & tahun ajaran + arsip (revisi no. 12) -->
+          <div style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;flex-wrap:wrap">
+            <details style="flex:1;min-width:230px">
+              <summary style="cursor:pointer;user-select:none;font-size:12px;font-weight:700;color:var(--sage-600);padding:10px 16px;border:1px solid var(--sage-100);border-radius:var(--radius-sm);background:#fff;display:flex;align-items:center;gap:6px">✏️ Ubah Nama &amp; Tahun Ajaran</summary>
+              <form method="POST" action="guru.php?page=kelas" style="margin-top:10px;display:grid;gap:8px">
+                <input type="hidden" name="aksi" value="ubah_kelas">
+                <input type="hidden" name="redirect_page" value="kelas">
+                <input type="hidden" name="kelas_id" value="<?= $id_kls ?>">
+                <input type="text" name="nama_kelas" class="input-elegant" style="padding:10px 14px" value="<?= e($kls['nama_kelas']) ?>" required>
+                <input type="text" name="tahun_ajaran" class="input-elegant" style="padding:10px 14px" value="<?= e($kls['tahun_ajaran'] ?? '') ?>" pattern="\d{4}/\d{4}" title="Format: 2025/2026" required>
+                <button type="submit" class="btn-primary" style="background:var(--sage-800)">Simpan Perubahan</button>
+              </form>
+            </details>
+            <form method="POST" style="display:inline">
+              <input type="hidden" name="aksi" value="toggle_arsip">
+              <input type="hidden" name="redirect_page" value="kelas">
+              <input type="hidden" name="kelas_id" value="<?= $id_kls ?>">
+              <button type="submit" class="btn-hapus" style="<?= !empty($kls['arsip']) ? 'color:#2E7D32;border-color:#C8E6C9;' : '' ?>"><?= !empty($kls['arsip']) ? 'Aktifkan Kelas' : 'Arsip Kelas' ?></button>
+            </form>
+          </div>
         </div>
         <?php endforeach; ?>
       </div>
@@ -1060,6 +1097,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <div class="card-manage" style="padding-bottom: 28px;">
         <a href="guru.php?page=kelas" style="display:inline-flex; align-items:center; gap:6px; color:var(--sage-600); text-decoration:none; font-weight:700; font-size:13px; margin-bottom:12px;">← Kembali ke Daftar Kelas</a>
         <h2 style="font-size:24px; margin-bottom:8px;"><?= e($kelas_ini['nama_kelas']) ?></h2>
+        <p>Tahun Ajaran: <strong><?= e($kelas_ini['tahun_ajaran'] ?? '-') ?></strong><?= !empty($kelas_ini['arsip']) ? ' • <strong style="color:#E07A5F">ARSIP</strong>' : '' ?></p>
         <p>Kode Gabung: <strong style="background:var(--nav-yellow); padding:2px 8px; border-radius:4px; color:var(--sage-800); font-family:monospace;"><?= e($kelas_ini['kode_gabung']) ?></strong></p>
       </div>
 
@@ -1083,7 +1121,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
       <?php if ($tab === 'murid'): ?>
           <?php
           $q_murid = mysqli_query($koneksi, "
-              SELECT ak.id AS ak_id, l.id AS user_id, l.nama, l.email 
+              SELECT ak.id AS ak_id, l.id AS user_id, l.nama, l.email, l.nis 
               FROM anggota_kelas ak 
               JOIN login l ON ak.user_id = l.id 
               WHERE ak.kelas_id = $detail_kelas_id AND COALESCE(ak.status, 'disetujui') = 'disetujui' 
@@ -1102,7 +1140,7 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
                       <li class="student-row-item">
                           <div>
                               <strong style="font-size: 14.5px; color: var(--sage-900); display:block; margin-bottom:4px;"><?= e($m['nama']) ?></strong>
-                              <span style="font-size: 13px; color: var(--sage-600);"><?= e($m['email']) ?></span>
+                              <span style="font-size: 13px; color: var(--sage-600);"><?= e($m['email'] ?: '-') ?><?= !empty($m['nis']) ? ' • NIS <strong>'.e($m['nis']).'</strong>' : '' ?></span>
                           </div>
                           <div style="display:flex; gap:8px;">
                               <a href="guru.php?page=profil_murid&id=<?= $m['user_id'] ?>&kelas_id=<?= $detail_kelas_id ?>" class="btn-primary" style="padding: 8px 14px; font-size:12px; background:var(--sage-500); text-decoration:none; box-shadow:none;">Lihat Profil</a>
@@ -1294,18 +1332,75 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
     <?php
       $murid_id = (int)($_GET['id'] ?? 0);
       $kelas_back_id = (int)($_GET['kelas_id'] ?? 0);
-      $qm = mysqli_query($koneksi, "SELECT id, nama, email, username FROM login WHERE id = $murid_id AND jenis = 'murid' LIMIT 1");
+      // Biodata lengkap murid (revisi no. 3 & 5): NIS, foto, username, email.
+      $qm = mysqli_query($koneksi, "SELECT id, nama, email, username, nis, foto FROM login WHERE id = $murid_id AND jenis = 'murid' LIMIT 1");
       $data_murid = $qm ? mysqli_fetch_assoc($qm) : null;
+
+      // Statistik murid (berbatas kelas bila datang dari detail kelas; global bila tidak).
+      $bio = ['gabung' => null, 'tugas' => 0, 'absen' => 0, 'sesi' => 0, 'quiz' => 0, 'rata' => null, 'terbaik' => null];
+      if ($data_murid) {
+          $kid = (int)$kelas_back_id;
+          $qj = mysqli_query($koneksi, "SELECT joined_at FROM anggota_kelas WHERE user_id=$murid_id".($kid>0 ? " AND kelas_id=$kid" : "")." ORDER BY joined_at DESC LIMIT 1");
+          if ($qj && ($rj = mysqli_fetch_assoc($qj))) $bio['gabung'] = $rj['joined_at'];
+
+          $qt = mysqli_query($koneksi, "SELECT COUNT(*) c FROM pengumpulan_tugas pt".($kid>0 ? " JOIN tugas t ON t.id=pt.tugas_id" : "")." WHERE pt.user_id=$murid_id".($kid>0 ? " AND t.kelas_id=$kid" : ""));
+          if ($qt && ($rt = mysqli_fetch_assoc($qt))) $bio['tugas'] = (int)$rt['c'];
+
+          $qa0 = mysqli_query($koneksi, "SELECT COUNT(*) c FROM absensi".($kid>0 ? " WHERE kelas_id=$kid" : ""));
+          if ($qa0 && ($ra0 = mysqli_fetch_assoc($qa0))) $bio['sesi'] = (int)$ra0['c'];
+          $qa1 = mysqli_query($koneksi, "SELECT COUNT(*) c FROM absensi_hadir ah".($kid>0 ? " JOIN absensi a ON a.id=ah.absensi_id" : "")." WHERE ah.user_id=$murid_id AND ah.status='hadir'".($kid>0 ? " AND a.kelas_id=$kid" : ""));
+          if ($qa1 && ($ra1 = mysqli_fetch_assoc($qa1))) $bio['absen'] = (int)$ra1['c'];
+
+          $qq0 = mysqli_query($koneksi, "SELECT COUNT(*) n, AVG(qh.skor) rata, MAX(qh.skor) terbaik FROM quiz_hasil qh".($kid>0 ? " JOIN quiz q ON q.id=qh.quiz_id" : "")." WHERE qh.user_id=$murid_id".($kid>0 ? " AND q.kelas_id=$kid" : ""));
+          if ($qq0 && ($rq0 = mysqli_fetch_assoc($qq0))) {
+              $bio['quiz'] = (int)$rq0['n'];
+              $bio['rata'] = $rq0['rata'] !== null ? (int)round((float)$rq0['rata']) : null;
+              $bio['terbaik'] = $rq0['terbaik'] !== null ? (int)$rq0['terbaik'] : null;
+          }
+      }
     ?>
     
     <?php if (!$data_murid): ?>
       <div class="empty-state"><p>Data murid tidak ditemukan.</p></div>
     <?php else: ?>
-      <div class="card-manage">
-        <a href="guru.php?page=detail_kelas&id=<?= $kelas_back_id ?>&tab=murid" style="display:inline-flex; align-items:center; gap:6px; color:var(--sage-600); text-decoration:none; font-weight:700; font-size:13px; margin-bottom:12px;">← Kembali ke Daftar Murid</a>
-        <h2>Profil Murid: <?= e($data_murid['nama']) ?></h2>
-        <p style="margin-top: 8px;"><strong>Email:</strong> <?= e($data_murid['email']) ?></p>
-        <p style="margin-top: 4px;"><strong>Username:</strong> <?= e($data_murid['username']) ?></p>
+      <div class="card-manage" style="margin-bottom: 24px;">
+        <a href="<?= $kelas_back_id > 0 ? 'guru.php?page=detail_kelas&id='.($kelas_back_id).'&tab=murid' : 'guru.php?page=kelas' ?>" style="display:inline-flex; align-items:center; gap:6px; color:var(--sage-600); text-decoration:none; font-weight:700; font-size:13px; margin-bottom:12px;">← Kembali ke Daftar Murid</a>
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:22px; flex-wrap:wrap;">
+          <div style="display:flex; gap:18px; align-items:center; flex-wrap:wrap;">
+            <?php $fotoMuridPath = !empty($data_murid['foto']) ? __DIR__ . '/' . $data_murid['foto'] : ''; ?>
+            <?php if ($fotoMuridPath && is_file($fotoMuridPath)): ?>
+              <img src="<?= e($data_murid['foto']) ?>" alt="Foto <?= e($data_murid['nama']) ?>" style="width:74px; height:74px; border-radius:20px; object-fit:cover; border:1px solid var(--sage-100);">
+            <?php else: ?>
+              <div style="width:74px; height:74px; border-radius:20px; background:var(--nav-yellow); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800; color:var(--sage-800);"><?= e(inisial_nama($data_murid['nama'])) ?></div>
+            <?php endif; ?>
+            <div>
+              <h2 style="margin-bottom:10px;">Biodata Murid: <?= e($data_murid['nama']) ?></h2>
+              <p style="margin-top:2px;"><strong>NIS:</strong> <?= e($data_murid['nis'] ?: '-') ?></p>
+              <p style="margin-top:4px;"><strong>Username:</strong> <?= e($data_murid['username']) ?></p>
+              <p style="margin-top:4px;"><strong>Email:</strong> <?= e($data_murid['email'] ?: '-') ?></p>
+              <?php if (!empty($bio['gabung'])): ?><p style="margin-top:4px;"><strong>Bergabung:</strong> <?= e(tanggal_id($bio['gabung'])) ?></p><?php endif; ?>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(2,150px); gap:10px;">
+            <div style="background:var(--sage-50); border:1px solid var(--sage-100); border-radius:var(--radius-md); padding:14px 16px;">
+              <div style="font-size:22px; font-weight:800; color:var(--sage-800);"><?= (int)$bio['tugas'] ?></div>
+              <div style="font-size:11.5px; color:var(--sage-600); font-weight:600;">Tugas Dikumpul</div>
+            </div>
+            <div style="background:var(--sage-50); border:1px solid var(--sage-100); border-radius:var(--radius-md); padding:14px 16px;">
+              <div style="font-size:22px; font-weight:800; color:var(--sage-800);"><?= (int)$bio['absen'] ?>/<?= (int)$bio['sesi'] ?></div>
+              <div style="font-size:11.5px; color:var(--sage-600); font-weight:600;">Kehadiran (Hadir/Sesi)</div>
+            </div>
+            <div style="background:var(--sage-50); border:1px solid var(--sage-100); border-radius:var(--radius-md); padding:14px 16px;">
+              <div style="font-size:22px; font-weight:800; color:var(--sage-800);"><?= (int)$bio['quiz'] ?></div>
+              <div style="font-size:11.5px; color:var(--sage-600); font-weight:600;">Quiz Dikerjakan</div>
+            </div>
+            <div style="background:var(--sage-50); border:1px solid var(--sage-100); border-radius:var(--radius-md); padding:14px 16px;">
+              <div style="font-size:22px; font-weight:800; color:var(--sage-800);"><?= $bio['rata'] !== null ? (int)$bio['rata'] : '—' ?></div>
+              <div style="font-size:11.5px; color:var(--sage-600); font-weight:600;">Rata-rata Skor<?= $bio['terbaik'] !== null ? ' (Tinggi: '.(int)$bio['terbaik'].')' : '' ?></div>
+            </div>
+          </div>
+        </div>
+        <?php if ($kelas_back_id <= 0): ?><p style="font-size:12px; color:var(--sage-600); margin-top:14px;">Statistik tampil secara global (semua kelas). Buka dari Detail Kelas untuk melihat statistik per kelas.</p><?php endif; ?>
       </div>
 
       <div class="card-manage" style="margin-top: 24px; border-color: #FFCDD2; background: #FFF9F9;">

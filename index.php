@@ -1,6 +1,7 @@
 <?php
 // SLearning - SKAJU Learning | SMK Negeri 7 Batam
 // Halaman beranda guest (belum login). Tombol auth masih dummy -> login.php
+date_default_timezone_set('Asia/Jakarta');
 ?>
 <!DOCTYPE html>
 <html lang="id">

@@ -4,12 +4,9 @@ session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
 
-if (!isset($_SESSION['user_id'])) { header("Location: login.php"); exit; }
-$uid = (int)$_SESSION['user_id'];
-$s = mysqli_prepare($koneksi, "SELECT id, nama, username, email, jenis, level FROM login WHERE id=? LIMIT 1");
-mysqli_stmt_bind_param($s,'i',$uid); mysqli_stmt_execute($s);
-$user = mysqli_fetch_assoc(mysqli_stmt_get_result($s)); mysqli_stmt_close($s);
-if (!$user) { header("Location: logout.php"); exit; }
+// Validasi sesi ke database; profil selalu memakai data terbaru dari DB.
+$user = session_guard($koneksi);
+$uid = (int)$user['id'];
 $jenis = $user['jenis']; $dashboard = $jenis==='guru' ? 'guru.php' : 'murid.php';
 
 $msg=''; $type='success';

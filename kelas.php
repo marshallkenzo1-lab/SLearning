@@ -4,7 +4,8 @@ session_start();
 require_once __DIR__ . '/config/koneksi.php';
 require_once __DIR__ . '/config/helpers.php';
 
-if (!isset($_SESSION['user_id']) || (($_SESSION['jenis'] ?? '') === 'guru')) { header("Location: login.php"); exit; }
+session_guard($koneksi);
+if (($_SESSION['jenis'] ?? '') === 'guru') { header("Location: guru.php"); exit; }
 $uid = (int)$_SESSION['user_id'];
 $nama_murid = $_SESSION['nama'] ?? 'Murid';
 $kelas_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;

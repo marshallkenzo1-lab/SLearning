@@ -107,21 +107,10 @@ $nama_murid = $user['nama'];
 $foto_profil = $user['foto'] ?? '';
 
 /* =========================
-   MIGRASI RINGAN
+   RINGKASAN FITUR
+   (Migrasi anggota_kelas.status, laporan_pengguna, dan kolom lain
+    sudah otomatis oleh config/koneksi.php — tidak perlu di sini.)
    ========================= */
-$cek = @mysqli_query($koneksi, "SHOW COLUMNS FROM anggota_kelas LIKE 'status'");
-if ($cek && mysqli_num_rows($cek) === 0) {
-    @mysqli_query($koneksi, "ALTER TABLE anggota_kelas ADD COLUMN status ENUM('pending','disetujui','ditolak') NOT NULL DEFAULT 'pending'");
-}
-@mysqli_query($koneksi, "CREATE TABLE IF NOT EXISTS laporan_pengguna (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    pelapor_id INT NOT NULL,
-    terlapor_id INT NOT NULL,
-    kategori VARCHAR(100) NOT NULL,
-    deskripsi TEXT,
-    status ENUM('pending','diproses','selesai') NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)");
 
 /* =========================
    PROSES FORM
@@ -279,7 +268,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 /* =========================
    DATA DASHBOARD
    ========================= */
-$kelasSaya = stmt_rows($koneksi, "SELECT k.id,k.nama_kelas,k.kode_gabung,k.guru_id,COALESCE(ak.status,'disetujui') status_izin,l.nama nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id LEFT JOIN login l ON l.id=k.guru_id WHERE ak.user_id=? ORDER BY k.id DESC", 'i', [$uid]);
+$kelasSaya = stmt_rows($koneksi, "SELECT k.id,k.nama_kelas,k.kode_gabung,k.guru_id,k.tahun_ajaran,COALESCE(ak.status,'disetujui') status_izin,l.nama nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id LEFT JOIN login l ON l.id=k.guru_id WHERE ak.user_id=? ORDER BY k.id DESC", 'i', [$uid]);
 $kelasDisetujui = [];
 foreach ($kelasSaya as $k) if (($k['status_izin'] ?? 'disetujui') === 'disetujui') $kelasDisetujui[] = (int)$k['id'];
 $inKelas = $kelasDisetujui ? implode(',', $kelasDisetujui) : '0';
@@ -359,7 +348,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
   <?php foreach ($kelasSaya as $k): ?>
     <div class="card">
       <span class="badge"><?= e(ucfirst($k['status_izin'] ?? 'disetujui')) ?></span>
-      <h3><?= e($k['nama_kelas']) ?></h3><p class="muted">Guru: <?= e($k['nama_guru'] ?? '-') ?></p>
+      <h3><?= e($k['nama_kelas']) ?></h3><p class="muted">Guru: <?= e($k['nama_guru'] ?? '-') ?><?= !empty($k['tahun_ajaran']) ? ' • TA '.e($k['tahun_ajaran']) : '' ?></p>
       <a class="btn" href="murid.php?page=detail_kelas&id=<?= (int)$k['id'] ?>">Lihat Kelas</a>
     </div>
   <?php endforeach; ?>

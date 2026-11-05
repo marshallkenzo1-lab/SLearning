@@ -73,3 +73,36 @@ if (!function_exists('inisial_nama')) {
         return $ini;
     }
 }
+
+if (!function_exists('session_guard')) {
+    /**
+     * Validasi sesi login terhadap database (perbaikan no. 11).
+     * - Tanpa user_id di sesi  -> lempar ke login.
+     * - Akun sudah dihapus      -> lempar ke login + hancurkan sesi.
+     * - jenis/level di sesi tidak sama dengan database (sesi basi / data diubah)
+     *   -> hancurkan sesi dan paksa login ulang.
+     * - Nama/username/email di sesi sinkron dengan data terbaru.
+     * Mengembalikan baris user dari database.
+     */
+    function session_guard(mysqli $koneksi): ?array {
+        if (empty($_SESSION['user_id'])) { header('Location: login.php'); exit; }
+        $uid = (int)$_SESSION['user_id'];
+        $s = mysqli_prepare($koneksi, "SELECT id,nama,username,email,jenis,level FROM login WHERE id=? LIMIT 1");
+        mysqli_stmt_bind_param($s, 'i', $uid);
+        mysqli_stmt_execute($s);
+        $u = mysqli_fetch_assoc(mysqli_stmt_get_result($s));
+        mysqli_stmt_close($s);
+        if (!$u
+            || ($u['jenis'] ?? '') !== (string)($_SESSION['jenis'] ?? '')
+            || ($u['level'] ?? '') !== (string)($_SESSION['level'] ?? '')) {
+            session_unset();
+            session_destroy();
+            header('Location: login.php');
+            exit;
+        }
+        $_SESSION['nama'] = $u['nama'];
+        $_SESSION['username'] = $u['username'];
+        $_SESSION['email'] = $u['email'];
+        return $u;
+    }
+}
