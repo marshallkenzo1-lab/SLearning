@@ -1,211 +1,210 @@
 <?php
 session_start();
 
-// Kalau sudah login, langsung arahkan sesuai jenis akun
-if (isset($_SESSION["user_id"]) && isset($_SESSION["jenis"])) {
-    if ($_SESSION["jenis"] === "guru") {
-        header("Location: guru.php");
-    } else {
-        header("Location: murid.php");
-    }
-    exit;
+// Keluar manual: login.php?logout=1
+if (isset($_GET["logout"])) {
+    session_unset(); session_destroy();
+    header("Location: login.php"); exit;
 }
 
-/* =====================================
-   DATABASE CONNECTION
-===================================== */
+// Nama file dashboard tiap peran. Ubah di sini kalau nama halaman dashboard berbeda.
+$dashboardFiles = ["murid" => "murid.php", "guru" => "guru.php", "waka" => "waka.php", "admin" => "admin.php"];
+$levelByJenis   = ["murid" => ["user"], "guru" => ["admin"], "waka" => ["admin", "super admin"], "admin" => ["super admin"]];
 
-$host = "localhost";
-$dbname = "slearning_db";
-$dbuser = "root";
-$dbpass = "";
+// Akun Petugas/Admin (super admin) dibuat otomatis SEKALI jika belum ada. Super admin tidak bisa mendaftar lewat form.
+// GANTI username & password ini sebelum dipakai sungguhan.
+$superAdminUsername = "admin";
+$superAdminPassword = "admin12345";
 
-$error = "";
-$success = "";
+function startUserSession(array $user): void {
+    session_regenerate_id(true);
+    $_SESSION["user_id"] = $user["id"]; $_SESSION["nama"] = $user["nama"]; $_SESSION["username"] = $user["username"];
+    $_SESSION["email"] = $user["email"] ?? ""; $_SESSION["jenis"] = $user["jenis"]; $_SESSION["level"] = $user["level"];
+}
 
-$mode = $_POST["mode"] ?? "login";
+// Jika sudah login, arahkan ke dashboard sesuai peran.
+// Redirect hanya dilakukan jika file dashboard benar-benar ada (mencegah 404 Not Found).
+$dashboardMissing = "";
+if (isset($_SESSION["user_id"], $_SESSION["jenis"])) {
+    $roleNow = $_SESSION["jenis"];
+    if (isset($dashboardFiles[$roleNow]) && in_array($_SESSION["level"] ?? "", $levelByJenis[$roleNow], true)) {
+        $dest = $dashboardFiles[$roleNow];
+        if (is_file(__DIR__ . "/" . $dest)) { header("Location: " . $dest); exit; }
+        $dashboardMissing = $dest;
+    } else {
+        session_unset(); session_destroy(); session_start();
+    }
+}
 
-$nama = "";
-$username = $_COOKIE["slearning_remember"] ?? "";
-$email = "";
-$jenis = "murid";
+$host = "localhost"; $dbname = "slearning_db"; $dbuser = "root"; $dbpass = "";
+$error = ""; $success = ""; $mode = $_POST["mode"] ?? (($_GET["mode"] ?? "") === "register" ? "register" : "login");
+$nama = ""; $username = ""; $email = ""; $jenis = "murid"; $registrationCode = "";
+$nis = ""; $loginJenis = $_POST["login_type"] ?? "murid"; $loginNama = trim($_POST["login_nama"] ?? ""); $loginNis = trim($_POST["login_nis"] ?? "");
+if (!in_array($loginJenis, ["murid", "guru", "waka", "admin"], true)) $loginJenis = "murid";
 
 try {
-    $pdo = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
-        $dbuser,
-        $dbpass,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-        ]
-    );
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbuser, $dbpass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS login (
+        id INT AUTO_INCREMENT PRIMARY KEY, nama VARCHAR(100) NOT NULL,
+        username VARCHAR(50) NOT NULL UNIQUE, email VARCHAR(100) NULL UNIQUE,
+        password VARCHAR(255) NOT NULL, jenis ENUM('waka','guru','murid','admin') NOT NULL,
+        level ENUM('super admin','admin','user') NOT NULL DEFAULT 'user',
+        nis VARCHAR(30) NULL UNIQUE, foto VARCHAR(255) NULL,
+        status_persetujuan ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved'
+    )");
 
-    // Membuat tabel otomatis jika belum ada (sesuai slearning_db.login)
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS login (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            nama VARCHAR(100) NOT NULL,
-            username VARCHAR(50) NOT NULL UNIQUE,
-            email VARCHAR(100) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
-            jenis ENUM('guru','murid') NOT NULL,
-            level ENUM('admin','user') NOT NULL DEFAULT 'user'
-        )
-    ");
+    // Migrasi untuk tabel lama agar kolom dan nilai level konsisten.
+    $cols = $pdo->query("SHOW COLUMNS FROM login")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array("nis", $cols, true)) {
+        $pdo->exec("ALTER TABLE login ADD COLUMN nis VARCHAR(30) NULL UNIQUE");
+    }
+    if (in_array("email", $cols, true)) {
+        $pdo->exec("ALTER TABLE login MODIFY email VARCHAR(100) NULL");
+    }
+    if (!in_array("status_persetujuan", $cols, true)) {
+        $pdo->exec("ALTER TABLE login ADD COLUMN status_persetujuan ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved'");
+    }
 
+    // Akun Guru yang tertahan status pending diaktifkan (tidak ada alur persetujuan).
+    $pdo->exec("UPDATE login SET status_persetujuan = 'approved' WHERE jenis = 'guru' AND status_persetujuan = 'pending'");
+
+    // Migrasikan ENUM level hanya jika strukturnya belum sesuai.
+    // Ubah sementara ke VARCHAR agar nilai ENUM lama tetap bisa dibaca.
+    $levelColumn = $pdo->query("SHOW COLUMNS FROM login LIKE 'level'")->fetch();
+    if ($levelColumn && strtolower($levelColumn['Type']) !== "enum('super admin','admin','user')") {
+        $pdo->exec("ALTER TABLE login MODIFY level VARCHAR(50) NOT NULL DEFAULT 'user'");
+        // Kode aplikasi memakai pemetaan tetap: waka=super admin, guru=admin, murid=user.
+        $pdo->exec("UPDATE login SET level = CASE
+            WHEN jenis = 'waka' THEN 'super admin'
+            WHEN jenis = 'guru' THEN 'admin'
+            WHEN jenis = 'murid' THEN 'user'
+            ELSE 'user'
+        END");
+        $pdo->exec("ALTER TABLE login MODIFY level ENUM('super admin','admin','user') NOT NULL DEFAULT 'user'");
+    }
+
+    // Pastikan jenis 'admin' (Petugas/Admin) tersedia pada tabel lama.
+    $jenisColumn = $pdo->query("SHOW COLUMNS FROM login LIKE 'jenis'")->fetch();
+    if ($jenisColumn && stripos($jenisColumn['Type'], "'admin'") === false) {
+        $pdo->exec("ALTER TABLE login MODIFY jenis ENUM('waka','guru','murid','admin') NOT NULL");
+    }
+
+    // Buat akun super admin otomatis jika belum ada.
+    $hasAdmin = $pdo->query("SELECT id FROM login WHERE jenis = 'admin' LIMIT 1")->fetch();
+    if (!$hasAdmin) {
+        $seed = $pdo->prepare("INSERT IGNORE INTO login (nama, username, email, password, jenis, level, nis, status_persetujuan) VALUES ('Super Admin', ?, NULL, ?, 'admin', 'super admin', NULL, 'approved')");
+        $seed->execute([$superAdminUsername, password_hash($superAdminPassword, PASSWORD_DEFAULT)]);
+    }
 } catch (PDOException $e) {
-    die("Koneksi database gagal. Pastikan MySQL aktif dan database slearning_db sudah dibuat.");
+    die("Koneksi atau struktur database gagal. Periksa database slearning_db dan tabel login.");
 }
 
-
-/* =====================================
-   FORM PROCESSING
-===================================== */
-
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
-
     $mode = $_POST["mode"] ?? "login";
     $username = trim($_POST["username"] ?? "");
     $password = $_POST["password"] ?? "";
 
     if ($mode === "register") {
-
+        $username = trim($_POST["register_username"] ?? "");
         $nama = trim($_POST["nama"] ?? "");
         $email = trim($_POST["email"] ?? "");
+        $nis = trim($_POST["nis"] ?? "");
         $jenis = $_POST["jenis"] ?? "";
         $confirm = $_POST["confirm_password"] ?? "";
+        $isMurid = $jenis === "murid";
 
-        // Validasi
-        if (
-            empty($nama) ||
-            empty($username) ||
-            empty($email) ||
-            empty($password) ||
-            empty($confirm)
-        ) {
+        if ($nama === "" || $password === "" || $confirm === "" || ($isMurid ? $nis === "" : ($username === "" || $email === ""))) {
             $error = "Semua kolom wajib diisi!";
-
-        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $error = "Format Gmail atau email tidak valid!";
-
-        } elseif (!in_array($jenis, ["guru", "murid"], true)) {
+        } elseif (!in_array($jenis, ["guru", "waka", "murid"], true)) {
             $error = "Pilih jenis pendaftaran yang valid!";
-
+        } elseif (!$isMurid && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $error = "Format email tidak valid!";
+        } elseif ($isMurid && !preg_match('/^[0-9]{3,30}$/', $nis)) {
+            $error = "NIS hanya boleh berisi angka (3-30 digit).";
         } elseif (strlen($password) < 8) {
             $error = "Password minimal 8 karakter!";
-
         } elseif ($password !== $confirm) {
             $error = "Konfirmasi password tidak cocok!";
-
         } else {
-
-            // Cek username atau email sudah digunakan
-            $check = $pdo->prepare("
-                SELECT id FROM login
-                WHERE username = ? OR email = ?
-            ");
-
-            $check->execute([$username, $email]);
-
-            if ($check->fetch()) {
-
-                $error = "Username atau email sudah terdaftar!";
-
+            if ($isMurid) {
+                $check = $pdo->prepare("SELECT id FROM login WHERE nis = ?");
+                $check->execute([$nis]);
             } else {
-
-                // Hash password sebelum disimpan
-                $hashedPassword = password_hash(
-                    $password,
-                    PASSWORD_DEFAULT
-                );
-
-                $stmt = $pdo->prepare("
-                    INSERT INTO login
-                    (nama, username, email, password, jenis, level)
-                    VALUES (?, ?, ?, ?, ?, 'user')
-                ");
-
-                $stmt->execute([
-                    $nama,
-                    $username,
-                    $email,
-                    $hashedPassword,
-                    $jenis
-                ]);
-
-                $success = "Pendaftaran berhasil! Silakan masuk menggunakan username dan password.";
-
-                $mode = "login";
-                $nama = "";
-                $username = "";
-                $email = "";
-                $jenis = "murid";
+                $check = $pdo->prepare("SELECT id FROM login WHERE username = ? OR email = ?");
+                $check->execute([$username, $email]);
+            }
+            if ($check->fetch()) {
+                $error = $isMurid ? "NIS sudah terdaftar. Periksa kembali NIS atau hubungi pengelola." : "Username atau email sudah terdaftar!";
+            } else {
+                $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
+                $level = $jenis === "murid" ? "user" : "admin";
+                // Akun Murid dan Guru langsung aktif.
+                $approvalStatus = "approved";
+                if ($isMurid) {
+                    // Username internal tetap unik, sedangkan murid masuk memakai nama + NIS.
+                    $internalUsername = "murid_" . $nis;
+                    $stmt = $pdo->prepare("INSERT INTO login (nama, username, email, password, jenis, level, nis, status_persetujuan) VALUES (?, ?, NULL, ?, 'murid', 'user', ?, 'approved')");
+                    $stmt->execute([$nama, $internalUsername, $hashedPassword, $nis]);
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO login (nama, username, email, password, jenis, level, nis, status_persetujuan) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)");
+                    $stmt->execute([$nama, $username, $email, $hashedPassword, $jenis, $level, $approvalStatus]);
+                }
+                $success = $isMurid ? "Pendaftaran murid berhasil! Silakan masuk menggunakan nama, NIS, dan password." : "Pendaftaran " . ($jenis === "waka" ? "waka" : "guru") . " berhasil! Silakan masuk menggunakan username dan password.";
+                $loginJenis = $jenis; $mode = "login"; $nama = ""; $username = ""; $email = ""; $nis = ""; $jenis = "murid"; $registrationCode = "";
             }
         }
-
     } elseif ($mode === "login") {
-
-        if (empty($username) || empty($password)) {
-
-            $error = "Username dan password wajib diisi!";
-
+        $loginType = $_POST["login_type"] ?? "murid";
+        if (!in_array($loginType, ["murid", "guru", "waka", "admin"], true)) $loginType = "murid";
+        $loginJenis = $loginType;
+        $loginNama = trim($_POST["login_nama"] ?? "");
+        $loginNis = trim($_POST["login_nis"] ?? "");
+        if ($password === "") {
+            $error = "Password wajib diisi!";
+        } elseif ($loginType === "murid") {
+            if ($loginNama === "" || $loginNis === "") $error = "Nama lengkap, NIS, dan password wajib diisi!";
+            else {
+                $stmt = $pdo->prepare("SELECT * FROM login WHERE jenis='murid' AND nama = ? AND nis = ? LIMIT 1");
+                $stmt->execute([$loginNama, $loginNis]);
+                $user = $stmt->fetch();
+                if ($user && password_verify($password, $user["password"]) && ($user["level"] ?? "") === "user" && ($user["status_persetujuan"] ?? "approved") === "approved") {
+                    startUserSession($user);
+                    $dest = $dashboardFiles["murid"];
+                    if (is_file(__DIR__ . "/" . $dest)) { header("Location: " . $dest); exit; }
+                    $dashboardMissing = $dest;
+                } else $error = "Nama, NIS, atau password murid salah, atau akun belum disetujui.";
+            }
         } else {
-
-            // Cari akun berdasarkan username di tabel login
-            $stmt = $pdo->prepare("
-                SELECT * FROM login
-                WHERE username = ?
-                LIMIT 1
-            ");
-
-            $stmt->execute([$username]);
-
-            $user = $stmt->fetch();
-
-            if ($user && password_verify($password, $user["password"])) {
-
-                session_regenerate_id(true);
-
-                $_SESSION["user_id"] = $user["id"];
-                $_SESSION["nama"] = $user["nama"];
-                $_SESSION["username"] = $user["username"];
-                $_SESSION["email"] = $user["email"] ?? "";
-                $_SESSION["jenis"] = $user["jenis"];
-                $_SESSION["level"] = $user["level"] ?? "user";
-
-                // Ingat username selama 30 hari (tidak menyimpan password).
-                $cookieOptions = [
-                    "expires" => !empty($_POST["remember"]) ? time() + (30 * 86400) : time() - 3600,
-                    "path" => "/",
-                    "secure" => !empty($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] !== "off",
-                    "httponly" => true,
-                    "samesite" => "Lax"
-                ];
-                if (!empty($_POST["remember"])) {
-                    setcookie("slearning_remember", $username, $cookieOptions);
+            // Guru, Waka, dan Petugas/Admin (super admin) masuk dengan username + password.
+            if ($username === "") $error = "Username dan password wajib diisi!";
+            else {
+                $stmt = $pdo->prepare("SELECT * FROM login WHERE username = ? AND jenis = ? LIMIT 1");
+                $stmt->execute([$username, $loginType]);
+                $user = $stmt->fetch();
+                if ($user && password_verify($password, $user["password"])) {
+                    $statusAkun = $user["status_persetujuan"] ?? "approved";
+                    if ($statusAkun === "pending") {
+                        $error = "Akun Anda belum aktif. Hubungi pengelola sekolah.";
+                    } elseif ($statusAkun === "rejected") {
+                        $error = "Pendaftaran akun ditolak. Hubungi pengelola sekolah.";
+                    } else {
+                        startUserSession($user);
+                        $dest = $dashboardFiles[$user["jenis"]];
+                        if (is_file(__DIR__ . "/" . $dest)) { header("Location: " . $dest); exit; }
+                        $dashboardMissing = $dest;
+                    }
                 } else {
-                    setcookie("slearning_remember", "", $cookieOptions);
+                    $error = "Username atau password salah!";
                 }
-
-                // Langsung pindahkan ke halaman sesuai jenis akun
-                if ($user["jenis"] === "guru") {
-                    header("Location: guru.php");
-                } else {
-                    header("Location: murid.php");
-                }
-                exit;
-
-            } else {
-
-                $error = "Username atau password salah!";
-
             }
         }
     }
 }
-?>
 
+// Peran yang tampil aktif saat halaman dibuka.
+$initRole = $mode === "register" ? $jenis : $loginJenis;
+if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || ($mode === "register" && $initRole === "admin")) $initRole = "murid";
+?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -267,6 +266,8 @@ a { color:inherit; text-decoration:none; }
 .tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:5px; margin-bottom:24px; background:#e8eddf; border:1px solid #dce3d3; border-radius:999px; }
 .tab { min-height:46px; padding:11px; border:0; border-radius:999px; background:transparent; color:#66785e; font-size:14px; font-weight:800; cursor:pointer; transition:.2s; }
 .tab.active { background:var(--sage-dark); color:#fffbea; box-shadow:0 4px 10px rgba(83,105,75,.18); }
+.tabs.role-tabs { grid-template-columns:repeat(var(--cols,4),1fr); }
+.role-tab { padding:10px 4px; font-size:13px; }
 .form-group { margin-bottom:17px; }
 .form-group label { display:block; margin-bottom:8px; font-size:13px; font-weight:700; color:#465941; }
 .input-box { min-height:52px; display:flex; align-items:center; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:rgba(255,255,255,.55); transition:.2s; }
@@ -287,7 +288,7 @@ a { color:inherit; text-decoration:none; }
 .auth-footer button { border:0; background:transparent; color:var(--sage-deep); font-weight:800; cursor:pointer; font-size:13px; margin-left:4px; }
 .security { border-top:1px solid var(--line); padding-top:17px; text-align:center; color:#7b8873; font-size:12px; }
 @media(max-width:950px) { .main { grid-template-columns:1fr; gap:32px; padding-top:38px; } .hero { text-align:center; margin:auto; } .hero p { margin:auto; } .features { justify-content:center; } .auth-card { justify-self:center; } }
-@media(max-width:520px) { .navbar { min-height:72px; padding:12px 5%; } .logo img { width:42px; height:42px; } .logo p { font-size:9px; letter-spacing:.5px; } .nav-button { padding:10px 14px; font-size:12px; } .main { padding:30px 5%; } .hero h1 { font-size:32px; } .auth-card { padding:23px 18px; border-radius:20px; } .form-options { align-items:flex-start; font-size:12px; } }
+@media(max-width:520px) { .tabs.role-tabs { grid-template-columns:repeat(2,1fr) !important; } .navbar { min-height:72px; padding:12px 5%; } .logo img { width:42px; height:42px; } .logo p { font-size:9px; letter-spacing:.5px; } .nav-button { padding:10px 14px; font-size:12px; } .main { padding:30px 5%; } .hero h1 { font-size:32px; } .auth-card { padding:23px 18px; border-radius:20px; } .form-options { align-items:flex-start; font-size:12px; } }
 </style>
 </head>
 
@@ -373,26 +374,20 @@ a { color:inherit; text-decoration:none; }
             </div>
         <?php endif; ?>
 
-        <!-- TABS -->
+        <?php if ($dashboardMissing): ?>
+            <div class="alert error">
+                Login berhasil, tetapi halaman <b><?= htmlspecialchars($dashboardMissing) ?></b> belum ada di folder proyek.
+                <a href="login.php?logout=1" style="text-decoration:underline;font-weight:700;">Keluar</a>
+            </div>
+        <?php endif; ?>
 
-        <div class="tabs">
+        <!-- TAB PERAN -->
 
-            <button
-                type="button"
-                id="loginTab"
-                class="tab"
-                onclick="setMode('login')">
-                Masuk
-            </button>
-
-            <button
-                type="button"
-                id="registerTab"
-                class="tab"
-                onclick="setMode('register')">
-                Daftar
-            </button>
-
+        <div class="tabs role-tabs" id="roleTabs">
+            <button type="button" class="tab role-tab" data-role="murid" onclick="setRole('murid')">Siswa</button>
+            <button type="button" class="tab role-tab" data-role="guru" onclick="setRole('guru')">Guru</button>
+            <button type="button" class="tab role-tab" data-role="waka" onclick="setRole('waka')">Waka</button>
+            <button type="button" class="tab role-tab" data-role="admin" onclick="setRole('admin')">Petugas/Admin</button>
         </div>
 
         <!-- FORM -->
@@ -409,32 +404,7 @@ a { color:inherit; text-decoration:none; }
 
             <div id="registerFields">
 
-                <!-- DAFTAR SEBAGAI -->
-
-                <div class="form-group">
-
-                    <label for="jenis">
-                        Daftar sebagai apa?
-                    </label>
-
-                    <select
-                        name="jenis"
-                        id="jenis"
-                        class="select-box">
-
-                        <option value="guru"
-                            <?= $jenis === "guru" ? "selected" : "" ?>>
-                            Guru
-                        </option>
-
-                        <option value="murid"
-                            <?= $jenis === "murid" ? "selected" : "" ?>>
-                            Murid
-                        </option>
-
-                    </select>
-
-                </div>
+                <input type="hidden" name="jenis" id="jenis" value="<?= htmlspecialchars($initRole) ?>">
 
                 <!-- NAMA -->
 
@@ -459,7 +429,23 @@ a { color:inherit; text-decoration:none; }
 
                 <!-- EMAIL -->
 
-                <div class="form-group">
+                <div class="form-group" id="nisRegisterGroup" style="display:none;">
+                    <label for="nis">NIS (Nomor Induk Siswa)</label>
+                    <div class="input-box">
+                        <span class="input-icon">♙</span>
+                        <input type="text" name="nis" id="nis" placeholder="Masukkan NIS (hanya angka)" value="<?= htmlspecialchars($nis) ?>" autocomplete="off" inputmode="numeric" pattern="[0-9]{3,30}" maxlength="30" title="NIS hanya boleh berisi angka" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                    </div>
+                </div>
+
+                <div class="form-group" id="registerUsernameGroup"> 
+                    <label for="register_username">Username</label>
+                    <div class="input-box">
+                        <span class="input-icon">♙</span>
+                        <input type="text" name="register_username" id="register_username" placeholder="Masukkan username" autocomplete="username" value="<?= htmlspecialchars($username) ?>">
+                    </div>
+                </div>
+
+                <div class="form-group" id="emailGroup">
 
                     <label for="email">
                         Gmail / Email
@@ -480,27 +466,30 @@ a { color:inherit; text-decoration:none; }
 
             </div>
 
-            <!-- USERNAME -->
+            <input type="hidden" name="login_type" id="login_type" value="<?= htmlspecialchars($initRole) ?>">
 
-            <div class="form-group">
-
-                <label for="username">
-                    Username
-                </label>
-
+            <div class="form-group" id="loginNamaGroup">
+                <label for="login_nama">Nama Lengkap</label>
                 <div class="input-box">
                     <span class="input-icon">♙</span>
-
-                    <input
-                        type="text"
-                        name="username"
-                        id="username"
-                        placeholder="Masukkan username"
-                        autocomplete="username"
-                        value="<?= htmlspecialchars($username) ?>"
-                        required>
+                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama sesuai pendaftaran" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="name">
                 </div>
+            </div>
 
+            <div class="form-group" id="loginNisGroup">
+                <label for="login_nis">NIS</label>
+                <div class="input-box">
+                    <span class="input-icon">♙</span>
+                    <input type="text" name="login_nis" id="login_nis" placeholder="Masukkan NIS" value="<?= htmlspecialchars($loginNis) ?>" autocomplete="username" inputmode="numeric" maxlength="30" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                </div>
+            </div>
+
+            <div class="form-group" id="loginUsernameGroup">
+                <label for="login_username" id="usernameLabel">Username</label>
+                <div class="input-box">
+                    <span class="input-icon">♙</span>
+                    <input type="text" name="username" id="login_username" placeholder="Masukkan username" autocomplete="username" value="<?= htmlspecialchars($username) ?>">
+                </div>
             </div>
 
             <!-- PASSWORD -->
@@ -589,20 +578,13 @@ a { color:inherit; text-decoration:none; }
         <!-- FOOTER -->
 
         <div class="auth-footer">
-
-            <span id="footerText">
-                Belum punya akun?
-            </span>
-
-            <button
-                type="button"
-                id="footerButton"
-                onclick="setMode('register')">
-
-                Daftar gratis
-
-            </button>
-
+            <div id="footerNormal">
+                <span id="footerText">Belum punya akun?</span>
+                <button type="button" id="footerButton" onclick="setMode(currentMode === 'register' ? 'login' : 'register')">Daftar gratis</button>
+            </div>
+            <div id="footerAdmin" style="display:none;">
+                Akun Petugas/Admin dibuat oleh pengelola sistem, jadi tidak ada pendaftaran untuk peran ini.
+            </div>
         </div>
 
         <div class="security">
@@ -614,118 +596,70 @@ a { color:inherit; text-decoration:none; }
 </main>
 
 <script>
-
-// MODE AWAL
 let currentMode = <?= json_encode($mode) ?>;
+let currentRole = <?= json_encode($initRole) ?>;
 
-
-// =====================================
-// GANTI LOGIN / REGISTER
-// =====================================
+function setRole(role) {
+    if (currentMode === "register" && role === "admin") role = "murid";
+    currentRole = role;
+    document.getElementById("jenis").value = role;
+    document.getElementById("login_type").value = role;
+    document.querySelectorAll(".role-tab").forEach(btn => btn.classList.toggle("active", btn.dataset.role === role));
+    const isAdmin = role === "admin";
+    document.getElementById("footerNormal").style.display = isAdmin ? "none" : "block";
+    document.getElementById("footerAdmin").style.display = isAdmin ? "block" : "none";
+    document.getElementById("login_username").placeholder = isAdmin ? "Username petugas / admin" : "Masukkan username";
+    updateRegistrationFields();
+    updateLoginFields();
+}
 
 function setMode(mode) {
-
     currentMode = mode;
-
+    const isRegister = mode === "register";
     document.getElementById("mode").value = mode;
-
-    const loginTab = document.getElementById("loginTab");
-    const registerTab = document.getElementById("registerTab");
-
-    const registerFields = document.getElementById("registerFields");
-    const confirmGroup = document.getElementById("confirmGroup");
-    const loginOptions = document.getElementById("loginOptions");
-
-    const nama = document.getElementById("nama");
-    const email = document.getElementById("email");
-    const confirm = document.getElementById("confirm_password");
-
-    const title = document.getElementById("formTitle");
-    const subtitle = document.getElementById("formSubtitle");
-    const submit = document.getElementById("submitBtn");
-
-    const footerText = document.getElementById("footerText");
-    const footerButton = document.getElementById("footerButton");
-
-    loginTab.classList.toggle("active", mode === "login");
-    registerTab.classList.toggle("active", mode === "register");
-
-    if (mode === "login") {
-
-        title.textContent = "Masuk ke SLearning";
-        subtitle.textContent =
-            "Masuk menggunakan username dan password.";
-
-        registerFields.style.display = "none";
-        confirmGroup.style.display = "none";
-        loginOptions.style.display = "flex";
-
-        nama.required = false;
-        email.required = false;
-        confirm.required = false;
-
-        submit.textContent = "Masuk";
-
-        footerText.textContent = "Belum punya akun?";
-        footerButton.textContent = "Daftar gratis";
-
-        footerButton.onclick = function() {
-            setMode("register");
-        };
-
-        document.getElementById("password").autocomplete =
-            "current-password";
-
-    } else {
-
-        title.textContent = "Buat Akun SLearning";
-        subtitle.textContent =
-            "Lengkapi data berikut untuk mendaftar.";
-
-        registerFields.style.display = "block";
-        confirmGroup.style.display = "block";
-        loginOptions.style.display = "none";
-
-        nama.required = true;
-        email.required = true;
-        confirm.required = true;
-
-        submit.textContent = "Daftar Sekarang →";
-
-        footerText.textContent = "Sudah punya akun?";
-        footerButton.textContent = "Masuk di sini";
-
-        footerButton.onclick = function() {
-            setMode("login");
-        };
-
-        document.getElementById("password").autocomplete =
-            "new-password";
-    }
+    document.getElementById("formTitle").textContent = isRegister ? "Buat Akun SLearning" : "Masuk ke SLearning";
+    document.getElementById("formSubtitle").textContent = isRegister ? "Pilih jenis akun, lalu lengkapi data berikut." : "Pilih jenis akunmu, lalu masuk.";
+    document.getElementById("registerFields").style.display = isRegister ? "block" : "none";
+    document.getElementById("confirmGroup").style.display = isRegister ? "block" : "none";
+    document.getElementById("loginOptions").style.display = isRegister ? "none" : "flex";
+    document.getElementById("confirm_password").required = isRegister;
+    document.getElementById("submitBtn").textContent = isRegister ? "Daftar Sekarang →" : "Masuk";
+    document.getElementById("footerText").textContent = isRegister ? "Sudah punya akun?" : "Belum punya akun?";
+    document.getElementById("footerButton").textContent = isRegister ? "Masuk di sini" : "Daftar gratis";
+    document.getElementById("password").autocomplete = isRegister ? "new-password" : "current-password";
+    // Petugas/Admin (super admin) hanya bisa masuk, tidak bisa daftar.
+    document.querySelector('.role-tab[data-role="admin"]').style.display = isRegister ? "none" : "";
+    document.getElementById("roleTabs").style.setProperty("--cols", isRegister ? 3 : 4);
+    setRole(currentRole);
 }
 
+function updateRegistrationFields() {
+    const isMurid = currentRole === "murid";
+    const isRegister = currentMode === "register";
+    document.getElementById("nisRegisterGroup").style.display = isRegister && isMurid ? "block" : "none";
+    document.getElementById("emailGroup").style.display = isRegister && !isMurid ? "block" : "none";
+    document.getElementById("registerUsernameGroup").style.display = isRegister && !isMurid ? "block" : "none";
+    document.getElementById("nis").required = isRegister && isMurid;
+    document.getElementById("email").required = isRegister && !isMurid;
+    document.getElementById("register_username").required = isRegister && !isMurid;
+}
 
-// =====================================
-// TAMPILKAN PASSWORD
-// =====================================
+function updateLoginFields() {
+    const student = currentRole === "murid";
+    const isLogin = currentMode === "login";
+    document.getElementById("loginNamaGroup").style.display = isLogin && student ? "block" : "none";
+    document.getElementById("loginNisGroup").style.display = isLogin && student ? "block" : "none";
+    document.getElementById("loginUsernameGroup").style.display = isLogin && !student ? "block" : "none";
+    document.getElementById("login_nama").required = isLogin && student;
+    document.getElementById("login_nis").required = isLogin && student;
+    document.getElementById("login_username").required = isLogin && !student;
+}
 
 function togglePassword(id) {
-
     const input = document.getElementById(id);
-
-    input.type =
-        input.type === "password"
-        ? "text"
-        : "password";
+    input.type = input.type === "password" ? "text" : "password";
 }
-
-
-// =====================================
-// INITIAL DISPLAY
-// =====================================
-
 setMode(currentMode);
-
 </script>
 
 </body>
