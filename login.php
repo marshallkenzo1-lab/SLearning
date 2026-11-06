@@ -8,13 +8,8 @@ if (isset($_GET["logout"])) {
 }
 
 // Nama file dashboard tiap peran. Ubah di sini kalau nama halaman dashboard berbeda.
-$dashboardFiles = ["murid" => "murid.php", "guru" => "guru.php", "waka" => "waka.php", "admin" => "admin.php"];
-$levelByJenis   = ["murid" => ["user"], "guru" => ["admin"], "waka" => ["admin", "super admin"], "admin" => ["super admin"]];
-
-// Akun Petugas/Admin (super admin) dibuat otomatis SEKALI jika belum ada. Super admin tidak bisa mendaftar lewat form.
-// GANTI username & password ini sebelum dipakai sungguhan.
-$superAdminUsername = "admin";
-$superAdminPassword = "admin12345";
+$dashboardFiles = ["murid" => "murid.php", "guru" => "guru.php", "waka" => "waka.php"];
+$levelByJenis   = ["murid" => ["user"], "guru" => ["admin"], "waka" => ["admin", "super admin"]];
 
 function startUserSession(array $user): void {
     session_regenerate_id(true);
@@ -40,7 +35,7 @@ $host = "localhost"; $dbname = "slearning_db"; $dbuser = "root"; $dbpass = "";
 $error = ""; $success = ""; $mode = $_POST["mode"] ?? (($_GET["mode"] ?? "") === "register" ? "register" : "login");
 $nama = ""; $username = ""; $email = ""; $jenis = "murid"; $registrationCode = "";
 $nis = ""; $loginJenis = $_POST["login_type"] ?? "murid"; $loginNama = trim($_POST["login_nama"] ?? ""); $loginNis = trim($_POST["login_nis"] ?? "");
-if (!in_array($loginJenis, ["murid", "guru", "waka", "admin"], true)) $loginJenis = "murid";
+if (!in_array($loginJenis, ["murid", "guru", "waka"], true)) $loginJenis = "murid";
 
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbuser, $dbpass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
@@ -82,19 +77,6 @@ try {
         END");
         $pdo->exec("ALTER TABLE login MODIFY level ENUM('super admin','admin','user') NOT NULL DEFAULT 'user'");
     }
-
-    // Pastikan jenis 'admin' (Petugas/Admin) tersedia pada tabel lama.
-    $jenisColumn = $pdo->query("SHOW COLUMNS FROM login LIKE 'jenis'")->fetch();
-    if ($jenisColumn && stripos($jenisColumn['Type'], "'admin'") === false) {
-        $pdo->exec("ALTER TABLE login MODIFY jenis ENUM('waka','guru','murid','admin') NOT NULL");
-    }
-
-    // Buat akun super admin otomatis jika belum ada.
-    $hasAdmin = $pdo->query("SELECT id FROM login WHERE jenis = 'admin' LIMIT 1")->fetch();
-    if (!$hasAdmin) {
-        $seed = $pdo->prepare("INSERT IGNORE INTO login (nama, username, email, password, jenis, level, nis, status_persetujuan) VALUES ('Super Admin', ?, NULL, ?, 'admin', 'super admin', NULL, 'approved')");
-        $seed->execute([$superAdminUsername, password_hash($superAdminPassword, PASSWORD_DEFAULT)]);
-    }
 } catch (PDOException $e) {
     die("Koneksi atau struktur database gagal. Periksa database slearning_db dan tabel login.");
 }
@@ -115,7 +97,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         if ($nama === "" || $password === "" || $confirm === "" || ($isMurid ? $nis === "" : ($username === "" || $email === ""))) {
             $error = "Semua kolom wajib diisi!";
-        } elseif (!in_array($jenis, ["guru", "waka", "murid"], true)) {
+        } elseif (!in_array($jenis, ["guru", "murid"], true)) {
             $error = "Pilih jenis pendaftaran yang valid!";
         } elseif (!$isMurid && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = "Format email tidak valid!";
@@ -149,13 +131,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $stmt = $pdo->prepare("INSERT INTO login (nama, username, email, password, jenis, level, nis, status_persetujuan) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)");
                     $stmt->execute([$nama, $username, $email, $hashedPassword, $jenis, $level, $approvalStatus]);
                 }
-                $success = $isMurid ? "Pendaftaran murid berhasil! Silakan masuk menggunakan nama, NIS, dan password." : "Pendaftaran " . ($jenis === "waka" ? "waka" : "guru") . " berhasil! Silakan masuk menggunakan username dan password.";
+                $success = $isMurid ? "Pendaftaran murid berhasil! Silakan masuk menggunakan nama, NIS, dan password." : "Pendaftaran guru berhasil! Silakan masuk menggunakan username dan password.";
                 $loginJenis = $jenis; $mode = "login"; $nama = ""; $username = ""; $email = ""; $nis = ""; $jenis = "murid"; $registrationCode = "";
             }
         }
     } elseif ($mode === "login") {
         $loginType = $_POST["login_type"] ?? "murid";
-        if (!in_array($loginType, ["murid", "guru", "waka", "admin"], true)) $loginType = "murid";
+        if (!in_array($loginType, ["murid", "guru", "waka"], true)) $loginType = "murid";
         $loginJenis = $loginType;
         $loginNama = trim($_POST["login_nama"] ?? "");
         $loginNis = trim($_POST["login_nis"] ?? "");
@@ -175,7 +157,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 } else $error = "Nama, NIS, atau password murid salah, atau akun belum disetujui.";
             }
         } else {
-            // Guru, Waka, dan Petugas/Admin (super admin) masuk dengan username + password.
+            // Guru dan Waka masuk dengan username + password.
             if ($username === "") $error = "Username dan password wajib diisi!";
             else {
                 $stmt = $pdo->prepare("SELECT * FROM login WHERE username = ? AND jenis = ? LIMIT 1");
@@ -203,7 +185,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 // Peran yang tampil aktif saat halaman dibuka.
 $initRole = $mode === "register" ? $jenis : $loginJenis;
-if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || ($mode === "register" && $initRole === "admin")) $initRole = "murid";
+if (!in_array($initRole, ["murid", "guru", "waka"], true) || ($mode === "register" && $initRole === "waka")) $initRole = "murid";
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -266,7 +248,7 @@ a { color:inherit; text-decoration:none; }
 .tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:5px; margin-bottom:24px; background:#e8eddf; border:1px solid #dce3d3; border-radius:999px; }
 .tab { min-height:46px; padding:11px; border:0; border-radius:999px; background:transparent; color:#66785e; font-size:14px; font-weight:800; cursor:pointer; transition:.2s; }
 .tab.active { background:var(--sage-dark); color:#fffbea; box-shadow:0 4px 10px rgba(83,105,75,.18); }
-.tabs.role-tabs { grid-template-columns:repeat(var(--cols,4),1fr); }
+.tabs.role-tabs { grid-template-columns:repeat(var(--cols,3),1fr); }
 .role-tab { padding:10px 4px; font-size:13px; }
 .form-group { margin-bottom:17px; }
 .form-group label { display:block; margin-bottom:8px; font-size:13px; font-weight:700; color:#465941; }
@@ -387,7 +369,6 @@ a { color:inherit; text-decoration:none; }
             <button type="button" class="tab role-tab" data-role="murid" onclick="setRole('murid')">Siswa</button>
             <button type="button" class="tab role-tab" data-role="guru" onclick="setRole('guru')">Guru</button>
             <button type="button" class="tab role-tab" data-role="waka" onclick="setRole('waka')">Waka</button>
-            <button type="button" class="tab role-tab" data-role="admin" onclick="setRole('admin')">Petugas/Admin</button>
         </div>
 
         <!-- FORM -->
@@ -582,9 +563,6 @@ a { color:inherit; text-decoration:none; }
                 <span id="footerText">Belum punya akun?</span>
                 <button type="button" id="footerButton" onclick="setMode(currentMode === 'register' ? 'login' : 'register')">Daftar gratis</button>
             </div>
-            <div id="footerAdmin" style="display:none;">
-                Akun Petugas/Admin dibuat oleh pengelola sistem, jadi tidak ada pendaftaran untuk peran ini.
-            </div>
         </div>
 
         <div class="security">
@@ -600,15 +578,11 @@ let currentMode = <?= json_encode($mode) ?>;
 let currentRole = <?= json_encode($initRole) ?>;
 
 function setRole(role) {
-    if (currentMode === "register" && role === "admin") role = "murid";
+    if (currentMode === "register" && role === "waka") role = "murid";
     currentRole = role;
     document.getElementById("jenis").value = role;
     document.getElementById("login_type").value = role;
     document.querySelectorAll(".role-tab").forEach(btn => btn.classList.toggle("active", btn.dataset.role === role));
-    const isAdmin = role === "admin";
-    document.getElementById("footerNormal").style.display = isAdmin ? "none" : "block";
-    document.getElementById("footerAdmin").style.display = isAdmin ? "block" : "none";
-    document.getElementById("login_username").placeholder = isAdmin ? "Username petugas / admin" : "Masukkan username";
     updateRegistrationFields();
     updateLoginFields();
 }
@@ -627,9 +601,9 @@ function setMode(mode) {
     document.getElementById("footerText").textContent = isRegister ? "Sudah punya akun?" : "Belum punya akun?";
     document.getElementById("footerButton").textContent = isRegister ? "Masuk di sini" : "Daftar gratis";
     document.getElementById("password").autocomplete = isRegister ? "new-password" : "current-password";
-    // Petugas/Admin (super admin) hanya bisa masuk, tidak bisa daftar.
-    document.querySelector('.role-tab[data-role="admin"]').style.display = isRegister ? "none" : "";
-    document.getElementById("roleTabs").style.setProperty("--cols", isRegister ? 3 : 4);
+    // Waka hanya bisa masuk, tidak ada pendaftaran Waka.
+    document.querySelector('.role-tab[data-role="waka"]').style.display = isRegister ? "none" : "";
+    document.getElementById("roleTabs").style.setProperty("--cols", isRegister ? 2 : 3);
     setRole(currentRole);
 }
 
