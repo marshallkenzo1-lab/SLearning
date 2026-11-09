@@ -171,6 +171,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $error = "Password wajib diisi!";
         } elseif ($loginType === "murid") {
             if ($loginNama === "") $error = "Nama lengkap atau NIS dan password wajib diisi!";
+            elseif (!preg_match('/^[A-Za-z0-9 ]+$/', $loginNama)) $error = "Nama/NIS hanya boleh berisi huruf dan angka.";
             else {
                 // Satu kolom: boleh diisi NIS atau nama lengkap. Jika ada nama yang sama, cocokkan lewat password.
                 $stmt = $pdo->prepare("SELECT * FROM login WHERE jenis='murid' AND (nis = ? OR nama = ?)");
@@ -483,7 +484,7 @@ a { color:inherit; text-decoration:none; }
                 <label for="login_nama">Nama Lengkap atau NIS</label>
                 <div class="input-box">
                     <span class="input-icon">♙</span>
-                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama lengkap atau NIS" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="username">
+                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama lengkap atau NIS" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="username" maxlength="100" oninput="this.value=this.value.replace(/[^A-Za-z0-9 ]/g,'')">
                 </div>
             </div>
 
