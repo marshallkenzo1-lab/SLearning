@@ -123,7 +123,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         if ($nama === "" || $password === "" || $confirm === "" || ($isMurid ? $nis === "" : ($username === "" || $email === ""))) {
             $error = "Semua kolom wajib diisi!";
-        } elseif (!in_array($jenis, ["guru", "waka", "murid"], true)) {
+        } elseif (!in_array($jenis, ["guru", "murid"], true)) {
             $error = "Pilih jenis pendaftaran yang valid!";
         } elseif (!$isMurid && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = "Format email tidak valid!";
@@ -211,7 +211,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 // Peran yang tampil aktif saat halaman dibuka.
 $initRole = $mode === "register" ? $jenis : $loginJenis;
-if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || ($mode === "register" && $initRole === "admin")) $initRole = "murid";
+if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || $initRole === "admin" || ($mode === "register" && $initRole === "waka")) $initRole = "murid";
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -227,10 +227,10 @@ if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || ($mode ===
     --sage: #9CAF88;
     --sage-dark: #718765;
     --sage-deep: #53694b;
-    --sage-light: #e7eddf;
-    --yellow: #fff3b0;
-    --yellow-soft: #fff9dc;
-    --yellow-border: #e7d77b;
+    --sage-light: #eef2e8;
+    --yellow: #fdf1b0;
+    --yellow-soft: #fffbe0;
+    --yellow-border: #efe2a0;
     --ink: #344331;
     --muted: #71806d;
     --line: #dce3d3;
@@ -238,26 +238,26 @@ if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || ($mode ===
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
     min-height:100vh; color:var(--ink); font-family:'Open Sans',Arial,sans-serif;
-    background:linear-gradient(125deg,#fffbe4 0%,#f7f6d9 48%,#e9eedf 100%);
+    background:linear-gradient(125deg,#ffffff 0%,#fffdf0 50%,#eef3e8 100%);
 }
 button,input,select { font:inherit; }
 a { color:inherit; text-decoration:none; }
 .navbar {
     min-height:84px; padding:14px clamp(20px,5vw,76px); display:flex; align-items:center;
-    justify-content:space-between; gap:20px; background:rgba(132,153,116,.96);
+    justify-content:space-between; gap:20px; background:rgba(143,166,124,.97);
     border-bottom:1px solid rgba(255,255,255,.35); box-shadow:0 6px 24px rgba(55,75,45,.10);
 }
 .logo { display:flex; align-items:center; gap:13px; }
 .logo img { width:50px; height:50px; object-fit:contain; background:#fff9dc; border-radius:12px; padding:3px; }
-.logo h2 { color:#fffbea; font-size:clamp(20px,2.5vw,27px); line-height:1.15; font-weight:800; }
-.logo p { color:#fff3b0; font-size:11px; margin-top:5px; letter-spacing:1px; font-weight:700; }
+.logo h2 { color:#ffffff; font-size:clamp(20px,2.5vw,27px); line-height:1.15; font-weight:800; }
+.logo p { color:#fdf1b0; font-size:11px; margin-top:5px; letter-spacing:1px; font-weight:700; }
 .nav-menu { display:flex; align-items:center; gap:12px; }
 .nav-button { display:inline-flex; align-items:center; justify-content:center; padding:12px 22px; border:1px solid rgba(255,255,255,.65); border-radius:999px; background:var(--yellow); color:var(--sage-deep); font-weight:700; transition:.2s; }
 .nav-button:hover { background:#fff9dc; transform:translateY(-1px); }
 .main {
     min-height:calc(100vh - 84px); padding:clamp(28px,5vw,64px) clamp(20px,5vw,76px);
     display:grid; grid-template-columns:minmax(0,1fr) minmax(360px,590px); align-items:center; gap:clamp(32px,5vw,70px);
-    background-image:radial-gradient(circle at 0% 0%,rgba(156,175,136,.20),transparent 28%),radial-gradient(circle at 100% 100%,rgba(255,243,176,.55),transparent 30%);
+    background-image:radial-gradient(circle at 0% 0%,rgba(156,175,136,.20),transparent 28%),radial-gradient(circle at 100% 100%,rgba(253,241,176,.70),transparent 32%);
 }
 .hero { max-width:610px; }
 .badge { display:inline-block; padding:9px 15px; margin-bottom:22px; background:var(--yellow-soft); border:1px solid var(--yellow-border); border-radius:999px; color:var(--sage-deep); font-size:12px; font-weight:800; letter-spacing:.06em; }
@@ -265,32 +265,32 @@ a { color:inherit; text-decoration:none; }
 .hero p { color:#65745f; font-size:clamp(15px,1.4vw,18px); line-height:1.8; max-width:530px; }
 .features { display:flex; flex-wrap:wrap; gap:13px 20px; margin-top:28px; color:#596b52; font-size:13px; font-weight:600; }
 .features span { color:var(--sage-dark); margin-right:6px; font-weight:900; }
-.auth-card { width:100%; max-width:590px; justify-self:end; padding:clamp(24px,3vw,38px); background:rgba(255,253,235,.92); border:1px solid rgba(221,214,155,.85); border-radius:26px; box-shadow:0 22px 55px rgba(78,96,62,.13); backdrop-filter:blur(8px); }
+.auth-card { width:100%; max-width:590px; justify-self:end; padding:clamp(24px,3vw,38px); background:#ffffff; border:1px solid #f0e6a8; border-radius:26px; box-shadow:0 22px 55px rgba(78,96,62,.13); backdrop-filter:blur(8px); }
 .auth-header h2 { font-family:'Poppins',Arial,sans-serif; font-size:clamp(23px,2.5vw,29px); color:var(--sage-deep); margin-bottom:8px; }
 .auth-header p { color:var(--muted); font-size:14px; line-height:1.6; margin-bottom:23px; }
 .alert { padding:12px 14px; margin-bottom:17px; border-radius:12px; font-size:13px; line-height:1.5; }
 .alert.error { background:#fff0ed; color:#a43b30; border:1px solid #efc5be; }
 .alert.success { background:#edf7e9; color:#3e7041; border:1px solid #c3ddbc; }
-.tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:5px; margin-bottom:24px; background:#e8eddf; border:1px solid #dce3d3; border-radius:999px; }
+.tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:5px; margin-bottom:24px; background:#fff8d2; border:1px solid #f0e6a8; border-radius:999px; }
 .tab { min-height:46px; padding:11px; border:0; border-radius:999px; background:transparent; color:#66785e; font-size:14px; font-weight:800; cursor:pointer; transition:.2s; }
-.tab.active { background:var(--sage-dark); color:#fffbea; box-shadow:0 4px 10px rgba(83,105,75,.18); }
+.tab.active { background:var(--sage-dark); color:#ffffff; box-shadow:0 4px 10px rgba(83,105,75,.18); }
 .tabs.role-tabs { grid-template-columns:repeat(var(--cols,4),1fr); }
 .role-tab { padding:10px 4px; font-size:13px; }
 .form-group { margin-bottom:17px; }
 .form-group label { display:block; margin-bottom:8px; font-size:13px; font-weight:700; color:#465941; }
-.input-box { min-height:52px; display:flex; align-items:center; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:rgba(255,255,255,.55); transition:.2s; }
-.input-box:focus-within { border-color:var(--sage-dark); background:#fffef4; box-shadow:0 0 0 3px rgba(156,175,136,.2); }
+.input-box { min-height:52px; display:flex; align-items:center; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:#ffffff; transition:.2s; }
+.input-box:focus-within { border-color:var(--sage-dark); background:#fffffa; box-shadow:0 0 0 3px rgba(156,175,136,.2); }
 .input-icon { color:var(--sage-dark); margin-right:11px; font-size:17px; }
 .input-box input { width:100%; min-width:0; height:50px; border:0; outline:0; background:transparent; color:var(--ink); font-size:14px; }
 .input-box input::placeholder { color:#98a38f; }
-.select-box { width:100%; min-height:52px; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:rgba(255,255,255,.6); color:var(--ink); font-size:14px; outline:0; cursor:pointer; }
+.select-box { width:100%; min-height:52px; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:#ffffff; color:var(--ink); font-size:14px; outline:0; cursor:pointer; }
 .select-box:focus { border-color:var(--sage-dark); box-shadow:0 0 0 3px rgba(156,175,136,.18); }
 .password-toggle { flex-shrink:0; padding:5px; border:0; background:transparent; color:var(--sage-dark); cursor:pointer; }
 .form-options { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:5px 0 22px; font-size:13px; }
 .remember { display:flex; align-items:center; gap:8px; color:var(--muted); }
 .remember input { accent-color:var(--sage-dark); }
 .forgot { color:var(--sage-deep); font-weight:700; }
-.submit-btn { width:100%; min-height:53px; border:0; border-radius:999px; background:var(--sage-dark); color:#fffbea; font-size:15px; font-weight:800; cursor:pointer; transition:.2s; box-shadow:0 7px 16px rgba(83,105,75,.16); }
+.submit-btn { width:100%; min-height:53px; border:0; border-radius:999px; background:var(--sage-dark); color:#ffffff; font-size:15px; font-weight:800; cursor:pointer; transition:.2s; box-shadow:0 7px 16px rgba(83,105,75,.16); }
 .submit-btn:hover { background:var(--sage-deep); transform:translateY(-1px); }
 .auth-footer { text-align:center; margin:23px 0; color:var(--muted); font-size:13px; }
 .auth-footer button { border:0; background:transparent; color:var(--sage-deep); font-weight:800; cursor:pointer; font-size:13px; margin-left:4px; }
@@ -395,7 +395,6 @@ a { color:inherit; text-decoration:none; }
             <button type="button" class="tab role-tab" data-role="murid" onclick="setRole('murid')">Siswa</button>
             <button type="button" class="tab role-tab" data-role="guru" onclick="setRole('guru')">Guru</button>
             <button type="button" class="tab role-tab" data-role="waka" onclick="setRole('waka')">Waka</button>
-            <button type="button" class="tab role-tab" data-role="admin" onclick="setRole('admin')">Petugas/Admin</button>
         </div>
 
         <!-- FORM -->
@@ -608,7 +607,7 @@ let currentMode = <?= json_encode($mode) ?>;
 let currentRole = <?= json_encode($initRole) ?>;
 
 function setRole(role) {
-    if (currentMode === "register" && role === "admin") role = "murid";
+    if (role === "admin" || (currentMode === "register" && role === "waka")) role = "murid";
     currentRole = role;
     document.getElementById("jenis").value = role;
     document.getElementById("login_type").value = role;
@@ -635,9 +634,9 @@ function setMode(mode) {
     document.getElementById("footerText").textContent = isRegister ? "Sudah punya akun?" : "Belum punya akun?";
     document.getElementById("footerButton").textContent = isRegister ? "Masuk di sini" : "Daftar gratis";
     document.getElementById("password").autocomplete = isRegister ? "new-password" : "current-password";
-    // Petugas/Admin (super admin) hanya bisa masuk, tidak bisa daftar.
-    document.querySelector('.role-tab[data-role="admin"]').style.display = isRegister ? "none" : "";
-    document.getElementById("roleTabs").style.setProperty("--cols", isRegister ? 3 : 4);
+    // Tab Petugas/Admin dihapus; tab Waka disembunyikan saat daftar.
+    document.querySelector('.role-tab[data-role="waka"]').style.display = isRegister ? "none" : "";
+    document.getElementById("roleTabs").style.setProperty("--cols", isRegister ? 2 : 3);
     setRole(currentRole);
 }
 
