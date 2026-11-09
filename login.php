@@ -170,17 +170,21 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         if ($password === "") {
             $error = "Password wajib diisi!";
         } elseif ($loginType === "murid") {
-            if ($loginNama === "" || $loginNis === "") $error = "Nama lengkap, NIS, dan password wajib diisi!";
+            if ($loginNama === "") $error = "Nama lengkap atau NIS dan password wajib diisi!";
             else {
-                $stmt = $pdo->prepare("SELECT * FROM login WHERE jenis='murid' AND nama = ? AND nis = ? LIMIT 1");
-                $stmt->execute([$loginNama, $loginNis]);
-                $user = $stmt->fetch();
-                if ($user && password_verify($password, $user["password"]) && ($user["level"] ?? "") === "user" && ($user["status_persetujuan"] ?? "approved") === "approved") {
+                // Satu kolom: boleh diisi NIS atau nama lengkap. Jika ada nama yang sama, cocokkan lewat password.
+                $stmt = $pdo->prepare("SELECT * FROM login WHERE jenis='murid' AND (nis = ? OR nama = ?)");
+                $stmt->execute([$loginNama, $loginNama]);
+                $user = null;
+                foreach ($stmt->fetchAll() as $row) {
+                    if (password_verify($password, $row["password"])) { $user = $row; break; }
+                }
+                if ($user && ($user["level"] ?? "") === "user" && ($user["status_persetujuan"] ?? "approved") === "approved") {
                     startUserSession($user);
                     $dest = $dashboardFiles["murid"];
                     if (is_file(__DIR__ . "/" . $dest)) { header("Location: " . $dest); exit; }
                     $dashboardMissing = $dest;
-                } else $error = "Nama, NIS, atau password murid salah, atau akun belum disetujui.";
+                } else $error = "Nama/NIS atau password murid salah, atau akun belum disetujui.";
             }
         } else {
             // Guru, Waka, dan Petugas/Admin (super admin) masuk dengan username + password.
@@ -476,18 +480,10 @@ a { color:inherit; text-decoration:none; }
             <input type="hidden" name="login_type" id="login_type" value="<?= htmlspecialchars($initRole) ?>">
 
             <div class="form-group" id="loginNamaGroup">
-                <label for="login_nama">Nama Lengkap</label>
+                <label for="login_nama">Nama Lengkap atau NIS</label>
                 <div class="input-box">
                     <span class="input-icon">♙</span>
-                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama sesuai pendaftaran" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="name">
-                </div>
-            </div>
-
-            <div class="form-group" id="loginNisGroup">
-                <label for="login_nis">NIS</label>
-                <div class="input-box">
-                    <span class="input-icon">♙</span>
-                    <input type="text" name="login_nis" id="login_nis" placeholder="Masukkan NIS" value="<?= htmlspecialchars($loginNis) ?>" autocomplete="username" inputmode="numeric" maxlength="30" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama lengkap atau NIS" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="username">
                 </div>
             </div>
 
@@ -655,10 +651,8 @@ function updateLoginFields() {
     const student = currentRole === "murid";
     const isLogin = currentMode === "login";
     document.getElementById("loginNamaGroup").style.display = isLogin && student ? "block" : "none";
-    document.getElementById("loginNisGroup").style.display = isLogin && student ? "block" : "none";
     document.getElementById("loginUsernameGroup").style.display = isLogin && !student ? "block" : "none";
     document.getElementById("login_nama").required = isLogin && student;
-    document.getElementById("login_nis").required = isLogin && student;
     document.getElementById("login_username").required = isLogin && !student;
 }
 
