@@ -494,6 +494,8 @@ a { color:inherit; text-decoration:none; }
                             name="email"
                             id="email"
                             placeholder="nama@gmail.com"
+                            autocomplete="email"
+                            oninput="limitEmailCom(this)"
                             value="<?= htmlspecialchars($email) ?>">
                     </div>
 
@@ -680,6 +682,14 @@ function updateLoginFields() {
     document.getElementById("loginUsernameGroup").style.display = isLogin && !student ? "block" : "none";
     document.getElementById("login_nama").required = isLogin && student;
     document.getElementById("login_username").required = isLogin && !student;
+}
+
+// Email berhenti bisa diketik setelah domain berakhir di ".com" (spasi juga dibuang).
+function limitEmailCom(input) {
+    let v = input.value.replace(/\s/g, "");
+    const m = v.match(/^[^@]+@[^@]*?\.com/i);
+    if (m) v = m[0];
+    if (input.value !== v) input.value = v;
 }
 
 function togglePassword(id) {
