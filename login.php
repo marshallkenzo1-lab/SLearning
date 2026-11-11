@@ -200,15 +200,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             // Guru, Waka, dan Petugas/Admin (super admin) masuk dengan username + password.
             if ($username === "") $error = "Username dan password wajib diisi!";
             else {
-                $stmt = $pdo->prepare("SELECT * FROM login WHERE username = ? LIMIT 1");
-                $stmt->execute([$username]);
+                $stmt = $pdo->prepare("SELECT * FROM login WHERE username = ? AND jenis = ? LIMIT 1");
+                $stmt->execute([$username, $loginType]);
                 $user = $stmt->fetch();
-                // Jika loginType dari form adalah waka, paksakan jenisnya
-                if ($user && $loginType === 'waka') {
-                    $user['jenis'] = 'waka';
-                    $user['level'] = 'super admin';
-                }
-                if ($user && ($password === $user['password'] || password_verify($password, $user['password']) || $loginType === 'waka')) {
+                if ($user && password_verify($password, $user["password"])) {
                     $statusAkun = $user["status_persetujuan"] ?? "approved";
                     if ($statusAkun === "pending") {
                         $error = "Akun Anda belum aktif. Hubungi pengelola sekolah.";
@@ -241,6 +236,10 @@ if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || $initRole 
 
 <title>SLearning | Login & Register</title>
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
 <style>
 :root {
     --sage: #9CAF88;
@@ -256,7 +255,7 @@ if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || $initRole 
 }
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
-    min-height:100vh; color:var(--ink); font-family:'Open Sans',Arial,sans-serif;
+    min-height:100vh; color:var(--ink); font-family:'Inter','Segoe UI',system-ui,-apple-system,Arial,sans-serif; -webkit-font-smoothing:antialiased;
     background:linear-gradient(125deg,#ffffff 0%,#fffdf0 50%,#eef3e8 100%);
 }
 button,input,select { font:inherit; }
@@ -268,7 +267,7 @@ a { color:inherit; text-decoration:none; }
 }
 .logo { display:flex; align-items:center; gap:13px; }
 .logo img { width:50px; height:50px; object-fit:contain; background:#fff9dc; border-radius:12px; padding:3px; }
-.logo h2 { color:#ffffff; font-size:clamp(20px,2.5vw,27px); line-height:1.15; font-weight:800; }
+.logo h2 { color:#ffffff; font-size:clamp(20px,2.5vw,27px); line-height:1.15; font-weight:800; letter-spacing:-0.03em; }
 .logo p { color:#fdf1b0; font-size:11px; margin-top:5px; letter-spacing:1px; font-weight:700; }
 .nav-menu { display:flex; align-items:center; gap:12px; }
 .nav-button { display:inline-flex; align-items:center; justify-content:center; padding:12px 22px; border:1px solid rgba(255,255,255,.65); border-radius:999px; background:var(--yellow); color:var(--sage-deep); font-weight:700; transition:.2s; }
@@ -280,12 +279,12 @@ a { color:inherit; text-decoration:none; }
 }
 .hero { max-width:610px; }
 .badge { display:inline-block; padding:9px 15px; margin-bottom:22px; background:var(--yellow-soft); border:1px solid var(--yellow-border); border-radius:999px; color:var(--sage-deep); font-size:12px; font-weight:800; letter-spacing:.06em; }
-.hero h1 { font-family:'Poppins',Arial,sans-serif; font-size:clamp(30px,4vw,52px); line-height:1.15; font-weight:800; letter-spacing:-1px; margin-bottom:22px; color:var(--sage-deep); }
+.hero h1 { font-family:'Inter','Segoe UI',system-ui,Arial,sans-serif; font-size:clamp(30px,4vw,52px); line-height:1.12; font-weight:800; letter-spacing:-0.035em; margin-bottom:22px; color:var(--sage-deep); }
 .hero p { color:#65745f; font-size:clamp(15px,1.4vw,18px); line-height:1.8; max-width:530px; }
 .features { display:flex; flex-wrap:wrap; gap:13px 20px; margin-top:28px; color:#596b52; font-size:13px; font-weight:600; }
 .features span { color:var(--sage-dark); margin-right:6px; font-weight:900; }
 .auth-card { width:100%; max-width:590px; justify-self:end; padding:clamp(24px,3vw,38px); background:#ffffff; border:1px solid #f0e6a8; border-radius:26px; box-shadow:0 22px 55px rgba(78,96,62,.13); backdrop-filter:blur(8px); }
-.auth-header h2 { font-family:'Poppins',Arial,sans-serif; font-size:clamp(23px,2.5vw,29px); color:var(--sage-deep); margin-bottom:8px; }
+.auth-header h2 { font-family:'Inter','Segoe UI',system-ui,Arial,sans-serif; letter-spacing:-0.03em; font-weight:800; font-size:clamp(23px,2.5vw,29px); color:var(--sage-deep); margin-bottom:8px; }
 .auth-header p { color:var(--muted); font-size:14px; line-height:1.6; margin-bottom:23px; }
 .alert { padding:12px 14px; margin-bottom:17px; border-radius:12px; font-size:13px; line-height:1.5; }
 .alert.error { background:#fff0ed; color:#a43b30; border:1px solid #efc5be; }
@@ -326,6 +325,7 @@ a { color:inherit; text-decoration:none; }
 <header class="navbar">
 
     <div class="logo">
+        <!-- Pastikan nama file gambar logo sesuai (contoh: image_a630c8.png) -->
         <img src="assets/img/logo-smkn7.png" alt="Logo SMK Negeri 7 Batam">
 
         <div>
