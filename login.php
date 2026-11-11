@@ -16,6 +16,9 @@ if (isset($_GET["logout"])) {
 $dashboardFiles = ["murid" => "murid.php", "guru" => "guru.php", "waka" => "waka.php", "admin" => "admin.php"];
 $levelByJenis   = ["murid" => ["user"], "guru" => ["admin"], "waka" => ["admin", "super admin"], "admin" => ["super admin"]];
 
+// Pilihan jurusan di form pendaftaran murid. Tambah/ubah jurusan cukup di daftar ini.
+$jurusanList = ["Rekayasa Perangkat Lunak (RPL)", "Teknik Instalasi Tenaga Listrik (TITL)", "Teknik Komputer dan Jaringan (TKJ)", "Manajemen Perkantoran (MP)", "Bisnis Retail (BR)", "Desain Komunikasi Visual (DKV)"];
+
 // Akun Petugas/Admin (super admin) dibuat otomatis SEKALI jika belum ada. Super admin tidak bisa mendaftar lewat form.
 // GANTI username & password ini sebelum dipakai sungguhan.
 $superAdminUsername = "admin";
@@ -44,7 +47,7 @@ if (isset($_SESSION["user_id"], $_SESSION["jenis"])) {
 $host = "localhost"; $dbname = "slearning_db"; $dbuser = "root"; $dbpass = "";
 $error = ""; $success = ""; $mode = $_POST["mode"] ?? (($_GET["mode"] ?? "") === "register" ? "register" : "login");
 $nama = ""; $username = ""; $email = ""; $jenis = "murid"; $registrationCode = "";
-$nis = ""; $loginJenis = $_POST["login_type"] ?? "murid"; $loginNama = trim($_POST["login_nama"] ?? ""); $loginNis = trim($_POST["login_nis"] ?? "");
+$nis = ""; $jurusan = ""; $loginJenis = $_POST["login_type"] ?? "murid"; $loginNama = trim($_POST["login_nama"] ?? ""); $loginNis = trim($_POST["login_nis"] ?? "");
 if (!in_array($loginJenis, ["murid", "guru", "waka", "admin"], true)) $loginJenis = "murid";
 
 try {
@@ -62,6 +65,9 @@ try {
     $cols = $pdo->query("SHOW COLUMNS FROM login")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array("nis", $cols, true)) {
         $pdo->exec("ALTER TABLE login ADD COLUMN nis VARCHAR(30) NULL UNIQUE");
+    }
+    if (!in_array("jurusan", $cols, true)) {
+        $pdo->exec("ALTER TABLE login ADD COLUMN jurusan VARCHAR(100) NULL");
     }
     if (!in_array("foto", $cols, true)) {
         $pdo->exec("ALTER TABLE login ADD COLUMN foto VARCHAR(255) NULL");
@@ -117,14 +123,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $nama = trim($_POST["nama"] ?? "");
         $email = trim($_POST["email"] ?? "");
         $nis = trim($_POST["nis"] ?? "");
+        $jurusan = trim($_POST["jurusan"] ?? "");
         $jenis = $_POST["jenis"] ?? "";
         $confirm = $_POST["confirm_password"] ?? "";
         $isMurid = $jenis === "murid";
 
-        if ($nama === "" || $password === "" || $confirm === "" || ($isMurid ? $nis === "" : ($username === "" || $email === ""))) {
+        if ($nama === "" || $password === "" || $confirm === "" || ($isMurid ? ($nis === "" || $jurusan === "") : ($username === "" || $email === ""))) {
             $error = "Semua kolom wajib diisi!";
-        } elseif (!in_array($jenis, ["guru", "waka", "murid"], true)) {
+        } elseif (!in_array($jenis, ["guru", "murid"], true)) {
             $error = "Pilih jenis pendaftaran yang valid!";
+        } elseif ($isMurid && !in_array($jurusan, $jurusanList, true)) {
+            $error = "Pilih jurusan yang valid!";
         } elseif (!$isMurid && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = "Format email tidak valid!";
         } elseif ($isMurid && !preg_match('/^[0-9]{3,30}$/', $nis)) {
@@ -151,14 +160,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 if ($isMurid) {
                     // Username internal tetap unik, sedangkan murid masuk memakai nama + NIS.
                     $internalUsername = "murid_" . $nis;
-                    $stmt = $pdo->prepare("INSERT INTO login (nama, username, email, password, jenis, level, nis, status_persetujuan) VALUES (?, ?, NULL, ?, 'murid', 'user', ?, 'approved')");
-                    $stmt->execute([$nama, $internalUsername, $hashedPassword, $nis]);
+                    $stmt = $pdo->prepare("INSERT INTO login (nama, username, email, password, jenis, level, nis, jurusan, status_persetujuan) VALUES (?, ?, NULL, ?, 'murid', 'user', ?, ?, 'approved')");
+                    $stmt->execute([$nama, $internalUsername, $hashedPassword, $nis, $jurusan]);
                 } else {
                     $stmt = $pdo->prepare("INSERT INTO login (nama, username, email, password, jenis, level, nis, status_persetujuan) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)");
                     $stmt->execute([$nama, $username, $email, $hashedPassword, $jenis, $level, $approvalStatus]);
                 }
                 $success = $isMurid ? "Pendaftaran murid berhasil! Silakan masuk menggunakan nama, NIS, dan password." : "Pendaftaran " . ($jenis === "waka" ? "waka" : "guru") . " berhasil! Silakan masuk menggunakan username dan password.";
-                $loginJenis = $jenis; $mode = "login"; $nama = ""; $username = ""; $email = ""; $nis = ""; $jenis = "murid"; $registrationCode = "";
+                $loginJenis = $jenis; $mode = "login"; $nama = ""; $username = ""; $email = ""; $nis = ""; $jurusan = ""; $jenis = "murid"; $registrationCode = "";
             }
         }
     } elseif ($mode === "login") {
@@ -170,17 +179,22 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         if ($password === "") {
             $error = "Password wajib diisi!";
         } elseif ($loginType === "murid") {
-            if ($loginNama === "" || $loginNis === "") $error = "Nama lengkap, NIS, dan password wajib diisi!";
+            if ($loginNama === "") $error = "Nama lengkap atau NIS dan password wajib diisi!";
+            elseif (!preg_match('/^[A-Za-z0-9 ]+$/', $loginNama)) $error = "Nama/NIS hanya boleh berisi huruf dan angka.";
             else {
-                $stmt = $pdo->prepare("SELECT * FROM login WHERE jenis='murid' AND nama = ? AND nis = ? LIMIT 1");
-                $stmt->execute([$loginNama, $loginNis]);
-                $user = $stmt->fetch();
-                if ($user && password_verify($password, $user["password"]) && ($user["level"] ?? "") === "user" && ($user["status_persetujuan"] ?? "approved") === "approved") {
+                // Satu kolom: boleh diisi NIS atau nama lengkap. Jika ada nama yang sama, cocokkan lewat password.
+                $stmt = $pdo->prepare("SELECT * FROM login WHERE jenis='murid' AND (nis = ? OR nama = ?)");
+                $stmt->execute([$loginNama, $loginNama]);
+                $user = null;
+                foreach ($stmt->fetchAll() as $row) {
+                    if (password_verify($password, $row["password"])) { $user = $row; break; }
+                }
+                if ($user && ($user["level"] ?? "") === "user" && ($user["status_persetujuan"] ?? "approved") === "approved") {
                     startUserSession($user);
                     $dest = $dashboardFiles["murid"];
                     if (is_file(__DIR__ . "/" . $dest)) { header("Location: " . $dest); exit; }
                     $dashboardMissing = $dest;
-                } else $error = "Nama, NIS, atau password murid salah, atau akun belum disetujui.";
+                } else $error = "Nama/NIS atau password murid salah, atau akun belum disetujui.";
             }
         } else {
             // Guru, Waka, dan Petugas/Admin (super admin) masuk dengan username + password.
@@ -211,7 +225,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 // Peran yang tampil aktif saat halaman dibuka.
 $initRole = $mode === "register" ? $jenis : $loginJenis;
-if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || ($mode === "register" && $initRole === "admin")) $initRole = "murid";
+if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || $initRole === "admin" || ($mode === "register" && $initRole === "waka")) $initRole = "murid";
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -227,10 +241,10 @@ if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || ($mode ===
     --sage: #9CAF88;
     --sage-dark: #718765;
     --sage-deep: #53694b;
-    --sage-light: #e7eddf;
-    --yellow: #fff3b0;
-    --yellow-soft: #fff9dc;
-    --yellow-border: #e7d77b;
+    --sage-light: #eef2e8;
+    --yellow: #fdf1b0;
+    --yellow-soft: #fffbe0;
+    --yellow-border: #efe2a0;
     --ink: #344331;
     --muted: #71806d;
     --line: #dce3d3;
@@ -238,26 +252,26 @@ if (!in_array($initRole, ["murid", "guru", "waka", "admin"], true) || ($mode ===
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
     min-height:100vh; color:var(--ink); font-family:'Open Sans',Arial,sans-serif;
-    background:linear-gradient(125deg,#fffbe4 0%,#f7f6d9 48%,#e9eedf 100%);
+    background:linear-gradient(125deg,#ffffff 0%,#fffdf0 50%,#eef3e8 100%);
 }
 button,input,select { font:inherit; }
 a { color:inherit; text-decoration:none; }
 .navbar {
     min-height:84px; padding:14px clamp(20px,5vw,76px); display:flex; align-items:center;
-    justify-content:space-between; gap:20px; background:rgba(132,153,116,.96);
+    justify-content:space-between; gap:20px; background:rgba(143,166,124,.97);
     border-bottom:1px solid rgba(255,255,255,.35); box-shadow:0 6px 24px rgba(55,75,45,.10);
 }
 .logo { display:flex; align-items:center; gap:13px; }
 .logo img { width:50px; height:50px; object-fit:contain; background:#fff9dc; border-radius:12px; padding:3px; }
-.logo h2 { color:#fffbea; font-size:clamp(20px,2.5vw,27px); line-height:1.15; font-weight:800; }
-.logo p { color:#fff3b0; font-size:11px; margin-top:5px; letter-spacing:1px; font-weight:700; }
+.logo h2 { color:#ffffff; font-size:clamp(20px,2.5vw,27px); line-height:1.15; font-weight:800; }
+.logo p { color:#fdf1b0; font-size:11px; margin-top:5px; letter-spacing:1px; font-weight:700; }
 .nav-menu { display:flex; align-items:center; gap:12px; }
 .nav-button { display:inline-flex; align-items:center; justify-content:center; padding:12px 22px; border:1px solid rgba(255,255,255,.65); border-radius:999px; background:var(--yellow); color:var(--sage-deep); font-weight:700; transition:.2s; }
 .nav-button:hover { background:#fff9dc; transform:translateY(-1px); }
 .main {
     min-height:calc(100vh - 84px); padding:clamp(28px,5vw,64px) clamp(20px,5vw,76px);
     display:grid; grid-template-columns:minmax(0,1fr) minmax(360px,590px); align-items:center; gap:clamp(32px,5vw,70px);
-    background-image:radial-gradient(circle at 0% 0%,rgba(156,175,136,.20),transparent 28%),radial-gradient(circle at 100% 100%,rgba(255,243,176,.55),transparent 30%);
+    background-image:radial-gradient(circle at 0% 0%,rgba(156,175,136,.20),transparent 28%),radial-gradient(circle at 100% 100%,rgba(253,241,176,.70),transparent 32%);
 }
 .hero { max-width:610px; }
 .badge { display:inline-block; padding:9px 15px; margin-bottom:22px; background:var(--yellow-soft); border:1px solid var(--yellow-border); border-radius:999px; color:var(--sage-deep); font-size:12px; font-weight:800; letter-spacing:.06em; }
@@ -265,32 +279,32 @@ a { color:inherit; text-decoration:none; }
 .hero p { color:#65745f; font-size:clamp(15px,1.4vw,18px); line-height:1.8; max-width:530px; }
 .features { display:flex; flex-wrap:wrap; gap:13px 20px; margin-top:28px; color:#596b52; font-size:13px; font-weight:600; }
 .features span { color:var(--sage-dark); margin-right:6px; font-weight:900; }
-.auth-card { width:100%; max-width:590px; justify-self:end; padding:clamp(24px,3vw,38px); background:rgba(255,253,235,.92); border:1px solid rgba(221,214,155,.85); border-radius:26px; box-shadow:0 22px 55px rgba(78,96,62,.13); backdrop-filter:blur(8px); }
+.auth-card { width:100%; max-width:590px; justify-self:end; padding:clamp(24px,3vw,38px); background:#ffffff; border:1px solid #f0e6a8; border-radius:26px; box-shadow:0 22px 55px rgba(78,96,62,.13); backdrop-filter:blur(8px); }
 .auth-header h2 { font-family:'Poppins',Arial,sans-serif; font-size:clamp(23px,2.5vw,29px); color:var(--sage-deep); margin-bottom:8px; }
 .auth-header p { color:var(--muted); font-size:14px; line-height:1.6; margin-bottom:23px; }
 .alert { padding:12px 14px; margin-bottom:17px; border-radius:12px; font-size:13px; line-height:1.5; }
 .alert.error { background:#fff0ed; color:#a43b30; border:1px solid #efc5be; }
 .alert.success { background:#edf7e9; color:#3e7041; border:1px solid #c3ddbc; }
-.tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:5px; margin-bottom:24px; background:#e8eddf; border:1px solid #dce3d3; border-radius:999px; }
+.tabs { display:grid; grid-template-columns:1fr 1fr; gap:5px; padding:5px; margin-bottom:24px; background:#fff8d2; border:1px solid #f0e6a8; border-radius:999px; }
 .tab { min-height:46px; padding:11px; border:0; border-radius:999px; background:transparent; color:#66785e; font-size:14px; font-weight:800; cursor:pointer; transition:.2s; }
-.tab.active { background:var(--sage-dark); color:#fffbea; box-shadow:0 4px 10px rgba(83,105,75,.18); }
+.tab.active { background:var(--sage-dark); color:#ffffff; box-shadow:0 4px 10px rgba(83,105,75,.18); }
 .tabs.role-tabs { grid-template-columns:repeat(var(--cols,4),1fr); }
 .role-tab { padding:10px 4px; font-size:13px; }
 .form-group { margin-bottom:17px; }
 .form-group label { display:block; margin-bottom:8px; font-size:13px; font-weight:700; color:#465941; }
-.input-box { min-height:52px; display:flex; align-items:center; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:rgba(255,255,255,.55); transition:.2s; }
-.input-box:focus-within { border-color:var(--sage-dark); background:#fffef4; box-shadow:0 0 0 3px rgba(156,175,136,.2); }
+.input-box { min-height:52px; display:flex; align-items:center; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:#ffffff; transition:.2s; }
+.input-box:focus-within { border-color:var(--sage-dark); background:#fffffa; box-shadow:0 0 0 3px rgba(156,175,136,.2); }
 .input-icon { color:var(--sage-dark); margin-right:11px; font-size:17px; }
 .input-box input { width:100%; min-width:0; height:50px; border:0; outline:0; background:transparent; color:var(--ink); font-size:14px; }
 .input-box input::placeholder { color:#98a38f; }
-.select-box { width:100%; min-height:52px; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:rgba(255,255,255,.6); color:var(--ink); font-size:14px; outline:0; cursor:pointer; }
+.select-box { width:100%; min-height:52px; padding:0 14px; border:1.5px solid #d6dfcd; border-radius:14px; background:#ffffff; color:var(--ink); font-size:14px; outline:0; cursor:pointer; }
 .select-box:focus { border-color:var(--sage-dark); box-shadow:0 0 0 3px rgba(156,175,136,.18); }
 .password-toggle { flex-shrink:0; padding:5px; border:0; background:transparent; color:var(--sage-dark); cursor:pointer; }
 .form-options { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:5px 0 22px; font-size:13px; }
 .remember { display:flex; align-items:center; gap:8px; color:var(--muted); }
 .remember input { accent-color:var(--sage-dark); }
 .forgot { color:var(--sage-deep); font-weight:700; }
-.submit-btn { width:100%; min-height:53px; border:0; border-radius:999px; background:var(--sage-dark); color:#fffbea; font-size:15px; font-weight:800; cursor:pointer; transition:.2s; box-shadow:0 7px 16px rgba(83,105,75,.16); }
+.submit-btn { width:100%; min-height:53px; border:0; border-radius:999px; background:var(--sage-dark); color:#ffffff; font-size:15px; font-weight:800; cursor:pointer; transition:.2s; box-shadow:0 7px 16px rgba(83,105,75,.16); }
 .submit-btn:hover { background:var(--sage-deep); transform:translateY(-1px); }
 .auth-footer { text-align:center; margin:23px 0; color:var(--muted); font-size:13px; }
 .auth-footer button { border:0; background:transparent; color:var(--sage-deep); font-weight:800; cursor:pointer; font-size:13px; margin-left:4px; }
@@ -395,7 +409,6 @@ a { color:inherit; text-decoration:none; }
             <button type="button" class="tab role-tab" data-role="murid" onclick="setRole('murid')">Siswa</button>
             <button type="button" class="tab role-tab" data-role="guru" onclick="setRole('guru')">Guru</button>
             <button type="button" class="tab role-tab" data-role="waka" onclick="setRole('waka')">Waka</button>
-            <button type="button" class="tab role-tab" data-role="admin" onclick="setRole('admin')">Petugas/Admin</button>
         </div>
 
         <!-- FORM -->
@@ -445,6 +458,16 @@ a { color:inherit; text-decoration:none; }
                     </div>
                 </div>
 
+                <div class="form-group" id="jurusanRegisterGroup" style="display:none;">
+                    <label for="jurusan">Jurusan</label>
+                    <select name="jurusan" id="jurusan" class="select-box">
+                        <option value="">-- Pilih jurusan --</option>
+                        <?php foreach ($jurusanList as $j): ?>
+                            <option value="<?= htmlspecialchars($j) ?>" <?= $jurusan === $j ? "selected" : "" ?>><?= htmlspecialchars($j) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
                 <div class="form-group" id="registerUsernameGroup"> 
                     <label for="register_username">Username</label>
                     <div class="input-box">
@@ -477,18 +500,10 @@ a { color:inherit; text-decoration:none; }
             <input type="hidden" name="login_type" id="login_type" value="<?= htmlspecialchars($initRole) ?>">
 
             <div class="form-group" id="loginNamaGroup">
-                <label for="login_nama">Nama Lengkap</label>
+                <label for="login_nama">Nama Lengkap atau NIS</label>
                 <div class="input-box">
                     <span class="input-icon">♙</span>
-                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama sesuai pendaftaran" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="name">
-                </div>
-            </div>
-
-            <div class="form-group" id="loginNisGroup">
-                <label for="login_nis">NIS</label>
-                <div class="input-box">
-                    <span class="input-icon">♙</span>
-                    <input type="text" name="login_nis" id="login_nis" placeholder="Masukkan NIS" value="<?= htmlspecialchars($loginNis) ?>" autocomplete="username" inputmode="numeric" maxlength="30" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama lengkap atau NIS" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="username" maxlength="100" oninput="this.value=this.value.replace(/[^A-Za-z0-9 ]/g,'')">
                 </div>
             </div>
 
@@ -608,7 +623,7 @@ let currentMode = <?= json_encode($mode) ?>;
 let currentRole = <?= json_encode($initRole) ?>;
 
 function setRole(role) {
-    if (currentMode === "register" && role === "admin") role = "murid";
+    if (role === "admin" || (currentMode === "register" && role === "waka")) role = "murid";
     currentRole = role;
     document.getElementById("jenis").value = role;
     document.getElementById("login_type").value = role;
@@ -635,9 +650,9 @@ function setMode(mode) {
     document.getElementById("footerText").textContent = isRegister ? "Sudah punya akun?" : "Belum punya akun?";
     document.getElementById("footerButton").textContent = isRegister ? "Masuk di sini" : "Daftar gratis";
     document.getElementById("password").autocomplete = isRegister ? "new-password" : "current-password";
-    // Petugas/Admin (super admin) hanya bisa masuk, tidak bisa daftar.
-    document.querySelector('.role-tab[data-role="admin"]').style.display = isRegister ? "none" : "";
-    document.getElementById("roleTabs").style.setProperty("--cols", isRegister ? 3 : 4);
+    // Tab Petugas/Admin dihapus; tab Waka disembunyikan saat daftar.
+    document.querySelector('.role-tab[data-role="waka"]').style.display = isRegister ? "none" : "";
+    document.getElementById("roleTabs").style.setProperty("--cols", isRegister ? 2 : 3);
     setRole(currentRole);
 }
 
@@ -645,6 +660,8 @@ function updateRegistrationFields() {
     const isMurid = currentRole === "murid";
     const isRegister = currentMode === "register";
     document.getElementById("nisRegisterGroup").style.display = isRegister && isMurid ? "block" : "none";
+    document.getElementById("jurusanRegisterGroup").style.display = isRegister && isMurid ? "block" : "none";
+    document.getElementById("jurusan").required = isRegister && isMurid;
     document.getElementById("emailGroup").style.display = isRegister && !isMurid ? "block" : "none";
     document.getElementById("registerUsernameGroup").style.display = isRegister && !isMurid ? "block" : "none";
     document.getElementById("nis").required = isRegister && isMurid;
@@ -656,10 +673,8 @@ function updateLoginFields() {
     const student = currentRole === "murid";
     const isLogin = currentMode === "login";
     document.getElementById("loginNamaGroup").style.display = isLogin && student ? "block" : "none";
-    document.getElementById("loginNisGroup").style.display = isLogin && student ? "block" : "none";
     document.getElementById("loginUsernameGroup").style.display = isLogin && !student ? "block" : "none";
     document.getElementById("login_nama").required = isLogin && student;
-    document.getElementById("login_nis").required = isLogin && student;
     document.getElementById("login_username").required = isLogin && !student;
 }
 
