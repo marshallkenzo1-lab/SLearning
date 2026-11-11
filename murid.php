@@ -1,7 +1,7 @@
 <?php
 /**
  * SLearning - Dashboard Murid
- * Versi bersih: konflik Git dan potongan halaman Login/Register sudah dihapus.
+ * Versi Terintegrasi dengan Pengumuman / Broadcast Waka
  */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -9,10 +9,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 /* =========================
    KONEKSI DATABASE
-   =========================
-   File koneksi proyek harus membuat variabel mysqli $koneksi.
-   Lokasi umum dicoba otomatis. Jika lokasi berbeda, ubah daftar di bawah.
-*/
+   ========================= */
 $kandidatKoneksi = [
     __DIR__ . '/koneksi.php',
     __DIR__ . '/config/koneksi.php',
@@ -30,7 +27,7 @@ foreach ($kandidatKoneksi as $fileKoneksi) {
 }
 if (!isset($koneksi) || !($koneksi instanceof mysqli)) {
     http_response_code(500);
-    die('Koneksi database $koneksi tidak ditemukan. Pastikan file koneksi.php tersedia dan membuat variabel mysqli $koneksi.');
+    die('Koneksi database $koneksi tidak ditemukan. Pastikan file koneksi.php tersedia.');
 }
 mysqli_set_charset($koneksi, 'utf8mb4');
 
@@ -84,21 +81,14 @@ if (empty($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;
 }
-if (($_SESSION['jenis'] ?? '') === 'guru') {
-    header('Location: guru.php');
-    exit;
-}
-if (($_SESSION['jenis'] ?? '') === 'waka') {
-    header('Location: waka.php');
-    exit;
-}
+if (($_SESSION['jenis'] ?? '') === 'guru') { header('Location: guru.php'); exit; }
+if (($_SESSION['jenis'] ?? '') === 'waka') { header('Location: waka.php'); exit; }
+
 $uid = (int)$_SESSION['user_id'];
 $user = stmt_row($koneksi, "SELECT id,nama,username,email,jenis,level,password,foto FROM login WHERE id=? LIMIT 1", 'i', [$uid]);
 if (!$user || ($user['jenis'] ?? '') !== 'murid') {
-    session_unset();
-    session_destroy();
-    header('Location: login.php');
-    exit;
+    session_unset(); session_destroy();
+    header('Location: login.php'); exit;
 }
 foreach (['nama','username','email','jenis','level','foto'] as $kolom) {
     $_SESSION[$kolom] = $user[$kolom] ?? '';
@@ -107,16 +97,9 @@ $nama_murid = $user['nama'];
 $foto_profil = $user['foto'] ?? '';
 
 /* =========================
-   RINGKASAN FITUR
-   (Migrasi anggota_kelas.status, laporan_pengguna, dan kolom lain
-    sudah otomatis oleh config/koneksi.php — tidak perlu di sini.)
-   ========================= */
-
-/* =========================
-   PROSES FORM
+   PROSES FORM (Ubah Profil, Gabung Kelas, Tugas, Dll)
    ========================= */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Update profil
     if (isset($_POST['update_profil'])) {
         $nama = trim($_POST['nama'] ?? '');
         $email = trim($_POST['email'] ?? '');
@@ -124,56 +107,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash_murid('Nama dan email yang valid wajib diisi.', 'error');
         } else {
             $sql = "UPDATE login SET nama=?, email=?";
-            $types = 'ss';
-            $params = [$nama, $email];
+            $types = 'ss'; $params = [$nama, $email];
             $passLama = $_POST['password_lama'] ?? '';
             $passBaru = $_POST['password_baru'] ?? '';
+            
             if ($passBaru !== '') {
                 if (!password_verify($passLama, $user['password'])) {
-                    flash_murid('Password lama tidak sesuai.', 'error', 'Gagal');
+                    flash_murid('Password lama tidak sesuai.', 'error');
                     header('Location: murid.php?page=profil'); exit;
                 }
                 if (strlen($passBaru) < 8) {
                     flash_murid('Password baru minimal 8 karakter.', 'error');
                     header('Location: murid.php?page=profil'); exit;
                 }
-                $sql .= ', password=?';
-                $types .= 's';
+                $sql .= ', password=?'; $types .= 's';
                 $params[] = password_hash($passBaru, PASSWORD_DEFAULT);
             }
-            if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
-                $ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
-                $mime = mime_content_type($_FILES['foto']['tmp_name']);
-                $allowed = ['jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','gif'=>'image/gif'];
-                if (isset($allowed[$ext]) && $mime === $allowed[$ext]) {
-                    $folder = __DIR__.'/uploads/profil/';
-                    if (!is_dir($folder)) mkdir($folder, 0755, true);
-                    $namaFile = 'murid_'.$uid.'_'.bin2hex(random_bytes(5)).'.'.$ext;
-                    if (move_uploaded_file($_FILES['foto']['tmp_name'], $folder.$namaFile)) {
-                        $sql .= ', foto=?'; $types .= 's'; $params[] = 'uploads/profil/'.$namaFile;
-                    }
-                } else {
-                    flash_murid('Foto harus berupa JPG, PNG, atau GIF.', 'error');
-                }
-            }
             $sql .= ' WHERE id=?'; $types .= 'i'; $params[] = $uid;
+            
             $st = mysqli_prepare($koneksi, $sql);
             if ($st) {
                 mysqli_stmt_bind_param($st, $types, ...$params);
-                $ok = mysqli_stmt_execute($st);
-                mysqli_stmt_close($st);
+                $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
                 flash_murid($ok ? 'Profil berhasil diperbarui.' : 'Profil gagal diperbarui.', $ok ? 'success' : 'error');
-            } else flash_murid('Query profil gagal diproses.', 'error');
+            }
         }
         header('Location: murid.php?page=profil'); exit;
     }
 
-    // Gabung kelas
     if (isset($_POST['gabung_kelas'])) {
         $kode = strtoupper(trim($_POST['kode_gabung'] ?? ''));
         $kelas = $kode !== '' ? stmt_row($koneksi, "SELECT id,nama_kelas FROM kelas WHERE kode_gabung=? LIMIT 1", 's', [$kode]) : null;
         if (!$kelas) {
-            flash_murid('Kode kelas tidak ditemukan.', 'error', 'Gagal');
+            flash_murid('Kode kelas tidak ditemukan.', 'error');
         } else {
             $kid = (int)$kelas['id'];
             $anggota = stmt_row($koneksi, "SELECT id,status FROM anggota_kelas WHERE kelas_id=? AND user_id=? LIMIT 1", 'ii', [$kid,$uid]);
@@ -181,22 +147,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (($anggota['status'] ?? 'disetujui') === 'disetujui') {
                     flash_murid('Kamu sudah tergabung di kelas ini.', 'info');
                 } else {
-                    $st = mysqli_prepare($koneksi, "UPDATE anggota_kelas SET status='pending' WHERE id=?");
-                    mysqli_stmt_bind_param($st, 'i', $anggota['id']); mysqli_stmt_execute($st); mysqli_stmt_close($st);
+                    mysqli_query($koneksi, "UPDATE anggota_kelas SET status='pending' WHERE id=".$anggota['id']);
                     flash_murid('Permintaan bergabung dikirim ulang.', 'success');
                 }
             } else {
-                $st = mysqli_prepare($koneksi, "INSERT INTO anggota_kelas (kelas_id,user_id,status) VALUES (?,?,'pending')");
-                mysqli_stmt_bind_param($st, 'ii', $kid, $uid);
-                $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
-                flash_murid($ok ? 'Permintaan bergabung dikirim. Tunggu persetujuan guru.' : 'Gagal mengirim permintaan.', $ok ? 'success' : 'error');
+                mysqli_query($koneksi, "INSERT INTO anggota_kelas (kelas_id,user_id,status) VALUES ($kid, $uid, 'pending')");
+                flash_murid('Permintaan bergabung dikirim. Tunggu persetujuan guru.', 'success');
             }
             header('Location: murid.php?page=detail_kelas&id='.$kid); exit;
         }
         header('Location: murid.php?page=kelas'); exit;
     }
 
-    // Isi absensi
     if (isset($_POST['isi_absen'])) {
         $aid = (int)($_POST['absensi_id'] ?? 0);
         $statusAbsen = $_POST['status'] ?? 'hadir';
@@ -207,11 +169,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mysqli_stmt_bind_param($st, 'iis', $aid, $uid, $statusAbsen);
             $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
             flash_murid($ok ? 'Kehadiran berhasil dicatat.' : 'Absensi gagal disimpan.', $ok ? 'success' : 'error');
-        } else flash_murid('Sesi absensi tidak ditemukan atau akses ditolak.', 'error');
+        }
         header('Location: murid.php?page=absensi'); exit;
     }
 
-    // Kumpulkan tugas
     if (isset($_POST['kumpulkan_tugas'])) {
         $tid = (int)($_POST['tugas_id'] ?? 0);
         $valid = stmt_row($koneksi, "SELECT t.id FROM tugas t JOIN anggota_kelas ak ON ak.kelas_id=t.kelas_id WHERE t.id=? AND ak.user_id=? AND COALESCE(ak.status,'disetujui')='disetujui' LIMIT 1", 'ii', [$tid,$uid]);
@@ -222,16 +183,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $f = $_FILES['file_tugas'];
             $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
-            $allowed = ['pdf','doc','docx','ppt','pptx','zip','rar','jpg','jpeg','png'];
-            if ($f['size'] > 10*1024*1024 || !in_array($ext, $allowed, true)) {
-                flash_murid('File maksimal 10 MB dan format harus PDF/DOC/DOCX/PPT/PPTX/ZIP/RAR/JPG/PNG.', 'error');
+            if ($f['size'] > 10*1024*1024) {
+                flash_murid('File maksimal 10 MB.', 'error');
             } else {
                 $folder = __DIR__.'/uploads/tugas/';
                 if (!is_dir($folder)) mkdir($folder, 0755, true);
                 $fileBaru = 'tugas_'.$uid.'_'.$tid.'_'.bin2hex(random_bytes(5)).'.'.$ext;
                 $pathDatabase = 'uploads/tugas/'.$fileBaru;
                 if (move_uploaded_file($f['tmp_name'], $folder.$fileBaru)) {
-                    $lama = stmt_row($koneksi, "SELECT id,file_path FROM pengumpulan_tugas WHERE tugas_id=? AND user_id=? LIMIT 1", 'ii', [$tid,$uid]);
+                    $lama = stmt_row($koneksi, "SELECT id FROM pengumpulan_tugas WHERE tugas_id=? AND user_id=? LIMIT 1", 'ii', [$tid,$uid]);
                     if ($lama) {
                         $st = mysqli_prepare($koneksi, "UPDATE pengumpulan_tugas SET nama_file=?,file_path=?,nilai=NULL,feedback=NULL,dikumpulkan_at=CURRENT_TIMESTAMP WHERE id=?");
                         mysqli_stmt_bind_param($st, 'ssi', $f['name'], $pathDatabase, $lama['id']);
@@ -240,48 +200,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         mysqli_stmt_bind_param($st, 'iiss', $tid, $uid, $f['name'], $pathDatabase);
                     }
                     $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
-                    flash_murid($ok ? 'Tugas berhasil dikumpulkan.' : 'Gagal menyimpan data tugas.', $ok ? 'success' : 'error');
-                } else flash_murid('File gagal diunggah.', 'error');
+                    flash_murid($ok ? 'Tugas berhasil dikumpulkan.' : 'Gagal menyimpan tugas.', $ok ? 'success' : 'error');
+                }
             }
         }
         header('Location: murid.php?page=tugas'); exit;
     }
-
-    // Kirim laporan
-    if (isset($_POST['kirim_laporan'])) {
-        $terlapor = (int)($_POST['terlapor_id'] ?? 0);
-        $kategori = trim($_POST['kategori'] ?? '');
-        $deskripsi = trim($_POST['deskripsi'] ?? '');
-        $tujuan = stmt_row($koneksi, "SELECT id FROM login WHERE id=? AND jenis IN ('guru','murid')", 'i', [$terlapor]);
-        if (!$tujuan || $terlapor === $uid || $kategori === '' || $deskripsi === '') {
-            flash_murid('Data laporan tidak valid.', 'error');
-        } else {
-            $st = mysqli_prepare($koneksi, "INSERT INTO laporan_pengguna (pelapor_id,terlapor_id,kategori,deskripsi) VALUES (?,?,?,?)");
-            mysqli_stmt_bind_param($st, 'iiss', $uid, $terlapor, $kategori, $deskripsi);
-            $ok = mysqli_stmt_execute($st); mysqli_stmt_close($st);
-            flash_murid($ok ? 'Laporan berhasil dikirim.' : 'Laporan gagal dikirim.', $ok ? 'success' : 'error');
-        }
-        header('Location: murid.php?page=laporan'); exit;
-    }
 }
 
 /* =========================
-   DATA DASHBOARD
+   DATA DASHBOARD & NOTIFIKASI GABUNGAN
    ========================= */
 $kelasSaya = stmt_rows($koneksi, "SELECT k.id,k.nama_kelas,k.kode_gabung,k.guru_id,k.tahun_ajaran,COALESCE(ak.status,'disetujui') status_izin,l.nama nama_guru FROM anggota_kelas ak JOIN kelas k ON k.id=ak.kelas_id LEFT JOIN login l ON l.id=k.guru_id WHERE ak.user_id=? ORDER BY k.id DESC", 'i', [$uid]);
 $kelasDisetujui = [];
 foreach ($kelasSaya as $k) if (($k['status_izin'] ?? 'disetujui') === 'disetujui') $kelasDisetujui[] = (int)$k['id'];
 $inKelas = $kelasDisetujui ? implode(',', $kelasDisetujui) : '0';
+
 $statTugas = 0; $statQuiz = 0;
-$r = mysqli_query($koneksi, "SELECT COUNT(*) jml FROM tugas WHERE kelas_id IN ($inKelas)");
-if ($r) $statTugas = (int)(mysqli_fetch_assoc($r)['jml'] ?? 0);
-$r = mysqli_query($koneksi, "SELECT COUNT(*) jml FROM quiz WHERE kelas_id IN ($inKelas)");
-if ($r) $statQuiz = (int)(mysqli_fetch_assoc($r)['jml'] ?? 0);
-$notifikasi = [];
 if ($inKelas !== '0') {
-    $r = mysqli_query($koneksi, "SELECT judul_tugas judul,'tugas' tipe,created_at tanggal FROM tugas WHERE kelas_id IN ($inKelas) UNION SELECT judul,'quiz' tipe,created_at tanggal FROM quiz WHERE kelas_id IN ($inKelas) ORDER BY tanggal DESC LIMIT 15");
-    if ($r) while ($x = mysqli_fetch_assoc($r)) $notifikasi[] = $x;
+    $statTugas = (int)(mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) jml FROM tugas WHERE kelas_id IN ($inKelas)"))['jml'] ?? 0);
+    $statQuiz = (int)(mysqli_fetch_assoc(mysqli_query($koneksi, "SELECT COUNT(*) jml FROM quiz WHERE kelas_id IN ($inKelas)"))['jml'] ?? 0);
 }
+
+$notifikasi = [];
+// 1. Ambil Notifikasi Tugas & Kuis dari kelas
+if ($inKelas !== '0') {
+    $r = mysqli_query($koneksi, "SELECT judul_tugas as judul, 'tugas' as tipe, created_at as tanggal, '' as isi FROM tugas WHERE kelas_id IN ($inKelas) UNION SELECT judul, 'quiz' as tipe, created_at as tanggal, '' as isi FROM quiz WHERE kelas_id IN ($inKelas)");
+    if ($r) {
+        while ($x = mysqli_fetch_assoc($r)) $notifikasi[] = $x;
+    }
+}
+
+// 2. Ambil Pengumuman / Broadcast dari Waka
+$r_waka = mysqli_query($koneksi, "SELECT judul, 'pengumuman' as tipe, waktu as tanggal, isi FROM pengumuman WHERE target IN ('semua', 'murid')");
+if ($r_waka) {
+    while ($p = mysqli_fetch_assoc($r_waka)) {
+        $notifikasi[] = $p;
+    }
+}
+
+// 3. Urutkan semua notifikasi berdasarkan tanggal paling baru (DESC)
+usort($notifikasi, function($a, $b) {
+    return strtotime($b['tanggal']) - strtotime($a['tanggal']);
+});
+
 $page = $_GET['page'] ?? 'beranda';
 $quizId = (int)($_GET['quiz_id'] ?? 0);
 $flash = $_SESSION['flash_murid'] ?? null;
@@ -308,6 +270,10 @@ input,select,textarea{font:inherit;width:100%;padding:12px;border:1px solid var(
 table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;border-bottom:1px solid var(--line);font-size:13px}
 .alert{padding:13px 16px;border-radius:12px;margin-bottom:18px;background:#e8f5e9;color:#28652d}.alert.error{background:#ffefed;color:#a43b30}
 .badge{display:inline-block;padding:5px 10px;border-radius:30px;background:var(--yellow);font-size:11px;font-weight:800}
+.notif-item { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.notif-item:last-child { border-bottom: none; }
+.badge-pengumuman { background: #FFECB3 !important; color: #E65100 !important; border: 1px solid #FFE082; }
+.isi-pengumuman { margin-top: 8px; font-size: 13px; color: var(--ink); line-height: 1.6; padding-left: 12px; border-left: 3px solid #FFCA28; background: #FFFAEC; padding: 10px 12px; border-radius: 0 8px 8px 0; }
 @media(max-width:600px){.header-top{padding:14px}.container{padding:0 13px}.card{padding:18px}.header-actions a{font-size:11px;padding:8px}}
 </style>
 </head>
@@ -334,6 +300,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
   <div class="alert <?= ($flash['tipe'] ?? '')==='error'?'error':'' ?>"><?= e($flash['pesan']) ?></div>
 <?php endif; ?>
 
+<!-- ================= HALAMAN KELAS ================= -->
 <?php if ($page === 'kelas'): ?>
   <section class="card">
     <h2>Kelas Saya</h2>
@@ -354,6 +321,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
   <?php endforeach; ?>
   </div>
 
+<!-- ================= HALAMAN DETAIL KELAS ================= -->
 <?php elseif ($page === 'detail_kelas'): ?>
   <?php
   $kid=(int)($_GET['id']??0);
@@ -376,6 +344,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
   <?php endif; ?>
   </div>
 
+<!-- ================= HALAMAN ABSENSI ================= -->
 <?php elseif ($page === 'absensi'): ?>
   <div class="card"><h2>Absensi Kehadiran</h2>
   <?php $absen=$inKelas!=='0'?stmt_rows($koneksi,"SELECT a.id,a.judul_absensi,a.tanggal,k.nama_kelas,ah.status FROM absensi a JOIN kelas k ON k.id=a.kelas_id LEFT JOIN absensi_hadir ah ON ah.absensi_id=a.id AND ah.user_id=? WHERE a.kelas_id IN ($inKelas) ORDER BY a.tanggal DESC",'i',[$uid]):[]; ?>
@@ -386,6 +355,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
     <?php endif; ?></div>
   <?php endforeach; endif; ?></div>
 
+<!-- ================= HALAMAN TUGAS ================= -->
 <?php elseif ($page === 'tugas'): ?>
   <div class="card"><h2>Daftar Tugas</h2>
   <?php $tugas=$inKelas!=='0'?stmt_rows($koneksi,"SELECT t.id,t.judul_tugas,t.deadline,k.nama_kelas,pt.nama_file FROM tugas t JOIN kelas k ON k.id=t.kelas_id LEFT JOIN pengumpulan_tugas pt ON pt.tugas_id=t.id AND pt.user_id=? WHERE t.kelas_id IN ($inKelas) ORDER BY t.deadline ASC",'i',[$uid]):[]; ?>
@@ -395,6 +365,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
     <form method="post" enctype="multipart/form-data"><input type="hidden" name="tugas_id" value="<?= (int)$t['id'] ?>"><input type="file" name="file_tugas" required><button class="btn" name="kumpulkan_tugas">Kumpulkan Tugas</button></form></div>
   <?php endforeach; endif; ?></div>
 
+<!-- ================= HALAMAN QUIZ ================= -->
 <?php elseif ($page === 'quiz'): ?>
   <div class="card"><h2>Quiz Tersedia</h2>
   <?php $quiz=$inKelas!=='0'?stmt_rows($koneksi,"SELECT q.id,q.judul,k.nama_kelas FROM quiz q JOIN kelas k ON k.id=q.kelas_id WHERE q.kelas_id IN ($inKelas) ORDER BY q.id DESC"):[]; ?>
@@ -402,27 +373,36 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
     <div style="padding:12px 0;border-bottom:1px solid var(--line)"><b><?= e($q['judul']) ?></b><p class="muted"><?= e($q['nama_kelas']) ?></p><a class="btn" href="murid.php?page=kerjakan_quiz&quiz_id=<?= (int)$q['id'] ?>">Buka Quiz</a></div>
   <?php endforeach; endif; ?></div>
 
-<?php elseif ($page === 'kerjakan_quiz'): ?>
-  <?php
-  $quizDetail = $quizId > 0 ? stmt_row($koneksi, "SELECT q.*,k.nama_kelas FROM quiz q JOIN kelas k ON k.id=q.kelas_id JOIN anggota_kelas ak ON ak.kelas_id=k.id WHERE q.id=? AND ak.user_id=? AND COALESCE(ak.status,'disetujui')='disetujui' LIMIT 1", 'ii', [$quizId,$uid]) : null;
-  ?>
+<!-- ================= HALAMAN NOTIFIKASI ================= -->
+<?php elseif ($page === 'notif' || $page === 'notifikasi'): ?>
   <div class="card">
-    <?php if (!$quizDetail): ?>
-      <h2>Quiz tidak ditemukan</h2><p class="muted">Quiz tidak tersedia atau kamu belum mendapat izin masuk kelas.</p>
-    <?php else: ?>
-      <h2><?= e($quizDetail['judul'] ?? 'Quiz') ?></h2>
-      <p class="muted">Kelas: <?= e($quizDetail['nama_kelas']) ?></p>
-      <p>Quiz ini terdaftar di kelas yang kamu ikuti. Tampilan pengerjaan soal perlu disesuaikan dengan struktur tabel soal dan jawaban pada database proyek.</p>
-      <a class="btn btn-light" href="murid.php?page=quiz">Kembali ke daftar quiz</a>
-    <?php endif; ?>
+      <h2>Pemberitahuan & Pengumuman Sekolah</h2>
+      <p class="muted" style="margin-bottom: 20px;">Daftar tugas, aktivitas kuis, dan pengumuman siaran langsung dari sekolah.</p>
+      
+      <?php if (!$notifikasi): ?>
+          <p class="muted">Belum ada pemberitahuan baru.</p>
+      <?php else: foreach($notifikasi as $n): 
+          $is_pengumuman = ($n['tipe'] === 'pengumuman');
+      ?>
+          <div class="notif-item">
+            <p style="margin: 0 0 6px 0;">
+              <span class="badge <?= $is_pengumuman ? 'badge-pengumuman' : '' ?>">
+                  <?= $is_pengumuman ? '📢 PENGUMUMAN' : e(strtoupper($n['tipe'])) ?>
+              </span> 
+              <b style="margin-left: 4px;"><?= e($n['judul']) ?></b> 
+              <span class="muted" style="font-size:11px; margin-left: 8px;">• <?= e(tanggal_id($n['tanggal'])) ?></span>
+            </p>
+            
+            <?php if ($is_pengumuman && !empty($n['isi'])): ?>
+                <div class="isi-pengumuman">
+                    <?= nl2br(e($n['isi'])) ?>
+                </div>
+            <?php endif; ?>
+          </div>
+      <?php endforeach; endif; ?>
   </div>
 
-<?php elseif ($page === 'notif' || $page === 'notifikasi'): ?>
-  <div class="card"><h2>Pemberitahuan</h2>
-  <?php if (!$notifikasi): ?><p class="muted">Belum ada pemberitahuan baru.</p><?php else: foreach($notifikasi as $n): ?>
-    <p><span class="badge"><?= e(strtoupper($n['tipe'])) ?></span> <?= e($n['judul']) ?> <span class="muted"><?= e(tanggal_id($n['tanggal'])) ?></span></p>
-  <?php endforeach; endif; ?></div>
-
+<!-- ================= HALAMAN PROFIL ================= -->
 <?php elseif ($page === 'profil'): ?>
   <div class="card"><h2>Pengaturan Profil</h2>
   <form method="post" enctype="multipart/form-data">
@@ -434,9 +414,9 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
     <button class="btn" name="update_profil">Simpan Profil</button>
   </form></div>
 
+<!-- ================= HALAMAN LAPORAN ================= -->
 <?php elseif ($page === 'laporan'): ?>
   <div class="card"><h2>🚩 Lapor Pelanggaran</h2>
-  <p class="muted">Laporan akan diteruskan kepada pengelola sekolah.</p>
   <form method="post">
     <label>Pengguna yang dilaporkan</label>
     <select name="terlapor_id" required><option value="">Pilih pengguna</option>
@@ -447,22 +427,52 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
     <label>Keterangan</label><textarea name="deskripsi" rows="4" required></textarea>
     <button class="btn" name="kirim_laporan">Kirim Laporan</button>
   </form>
-  <h3>Riwayat Laporan Saya</h3>
-  <?php foreach(stmt_rows($koneksi,"SELECT lp.*,l.nama,l.jenis FROM laporan_pengguna lp JOIN login l ON l.id=lp.terlapor_id WHERE lp.pelapor_id=? ORDER BY lp.created_at DESC",'i',[$uid]) as $lp): ?>
-    <p><b><?= e($lp['nama']) ?></b> — <?= e($lp['kategori']) ?> <span class="badge"><?= e($lp['status']) ?></span></p>
-  <?php endforeach; ?></div>
+  </div>
 
+<!-- ================= HALAMAN BERANDA ================= -->
 <?php else: ?>
-  <div class="card"><h1>Halo, <?= e($nama_murid) ?> 👋</h1><p class="muted">Selamat datang di SLearning SMK Negeri 7 Batam.</p></div>
+  <div class="card">
+      <h1 style="margin-bottom: 8px;">Halo, <?= e($nama_murid) ?> 👋</h1>
+      <p class="muted">Selamat datang di SLearning SMK Negeri 7 Batam.</p>
+  </div>
+  
   <div class="grid">
     <div class="card stat"><span class="stat-icon">📝</span><div><h2><?= $statTugas ?></h2><p class="muted">Tugas Aktif</p></div></div>
     <div class="card stat"><span class="stat-icon">🎮</span><div><h2><?= $statQuiz ?></h2><p class="muted">Quiz Tersedia</p></div></div>
     <div class="card stat"><span class="stat-icon">🏫</span><div><h2><?= count($kelasSaya) ?></h2><p class="muted">Kelas Diikuti</p></div></div>
   </div>
-  <div class="card"><h2>Aktivitas Terbaru</h2>
-  <?php if (!$notifikasi): ?><p class="muted">Belum ada aktivitas baru.</p><?php else: foreach($notifikasi as $n): ?>
-    <p><span class="badge"><?= e(strtoupper($n['tipe'])) ?></span> <?= e($n['judul']) ?> · <span class="muted"><?= e(tanggal_id($n['tanggal'])) ?></span></p>
-  <?php endforeach; endif; ?></div>
+  
+  <div class="card">
+      <h2>Aktivitas & Pengumuman Terbaru</h2>
+      <?php if (!$notifikasi): ?>
+          <p class="muted">Belum ada aktivitas atau pengumuman baru.</p>
+      <?php else: 
+          $tampil_beranda = array_slice($notifikasi, 0, 5); // Tampilkan 5 pemberitahuan teratas
+          foreach($tampil_beranda as $n): 
+              $is_pengumuman = ($n['tipe'] === 'pengumuman');
+      ?>
+          <div class="notif-item">
+            <p style="margin: 0 0 6px 0;">
+                <span class="badge <?= $is_pengumuman ? 'badge-pengumuman' : '' ?>">
+                    <?= $is_pengumuman ? '📢 PENGUMUMAN' : e(strtoupper($n['tipe'])) ?>
+                </span> 
+                <b style="margin-left: 4px;"><?= e($n['judul']) ?></b> 
+                <span class="muted" style="font-size: 11px; margin-left: 6px;">• <?= e(tanggal_id($n['tanggal'])) ?></span>
+            </p>
+            <?php if ($is_pengumuman && !empty($n['isi'])): ?>
+                <p style="margin: 0; font-size: 12.5px; color: var(--muted); padding-left: 4px;">
+                    <?= nl2br(e(strlen($n['isi']) > 120 ? substr($n['isi'], 0, 120).'...' : $n['isi'])) ?>
+                </p>
+            <?php endif; ?>
+          </div>
+      <?php endforeach; endif; ?>
+      
+      <?php if(count($notifikasi) > 5): ?>
+          <div style="margin-top: 16px; text-align: center;">
+              <a href="murid.php?page=notif" class="btn btn-light" style="width: 100%;">Lihat Semua Pemberitahuan</a>
+          </div>
+      <?php endif; ?>
+  </div>
 <?php endif; ?>
 </main>
 </body>
