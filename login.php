@@ -79,8 +79,8 @@ try {
         $pdo->exec("ALTER TABLE login ADD COLUMN status_persetujuan ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved'");
     }
 
-    // Akun Guru yang tertahan status pending diaktifkan (tidak ada alur persetujuan).
-    $pdo->exec("UPDATE login SET status_persetujuan = 'approved' WHERE jenis = 'guru' AND status_persetujuan = 'pending'");
+    // Akun Guru dan Waka yang tertahan status pending diaktifkan (tidak ada alur persetujuan).
+    $pdo->exec("UPDATE login SET status_persetujuan = 'approved' WHERE jenis IN ('guru', 'waka') AND status_persetujuan = 'pending'");
 
     // Migrasikan ENUM level hanya jika strukturnya belum sesuai.
     // Ubah sementara ke VARCHAR agar nilai ENUM lama tetap bisa dibaca.
@@ -646,7 +646,7 @@ function setMode(mode) {
     currentMode = mode;
     const isRegister = mode === "register";
     document.getElementById("mode").value = mode;
-    document.getElementById("formTitle").textContent = isRegister ? "Buat Akun SLearning" : "Masuk ke SLearning";
+    document.getElementById("formTitle").textContent = isRegister ? "Buat Akun slearning_db" : "Masuk ke slearning_db";
     document.getElementById("formSubtitle").textContent = isRegister ? "Pilih jenis akun, lalu lengkapi data berikut." : "Pilih jenis akunmu, lalu masuk.";
     document.getElementById("registerFields").style.display = isRegister ? "block" : "none";
     document.getElementById("confirmGroup").style.display = isRegister ? "block" : "none";
