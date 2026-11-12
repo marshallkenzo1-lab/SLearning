@@ -53,7 +53,14 @@ $nis = ""; $jurusan = ""; $loginJenis = $_POST["login_type"] ?? "murid"; $loginN
 if (!in_array($loginJenis, ["murid", "guru", "waka", "admin"], true)) $loginJenis = "murid";
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbuser, $dbpass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+07:00'"]);
+    // Database & tabel dibuat otomatis bila belum ada (tanpa perlu phpMyAdmin),
+    // jadi orang yang baru pertama kali memakai aplikasi langsung bisa login.
+    $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+07:00'"];
+    // Koneksi pertama tanpa nama database agar bisa menjalankan CREATE DATABASE sendiri.
+    $pdo = new PDO("mysql:host=$host;charset=utf8mb4", $dbuser, $dbpass, $options);
+    $pdo->exec("CREATE DATABASE IF NOT EXISTS `$dbname` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
+    $pdo->exec("USE `$dbname`");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS login (
         id INT AUTO_INCREMENT PRIMARY KEY, nama VARCHAR(100) NOT NULL,
         username VARCHAR(50) NOT NULL UNIQUE, email VARCHAR(100) NULL UNIQUE,
@@ -497,7 +504,7 @@ a { color:inherit; text-decoration:none; }
                     <select name="jurusan" id="jurusan" class="select-box">
                         <option value="">-- Pilih jurusan --</option>
                         <?php foreach ($jurusanList as $j): ?>
-                            <option value="<?= htmlspecialchars($j) ?>" <?= $jurusan === $j ? "selected" : "" ?>><option><?= htmlspecialchars($j) ?></option>
+                            <option value="<?= htmlspecialchars($j) ?>" <?= $jurusan === $j ? "selected" : "" ?>><?= htmlspecialchars($j) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
