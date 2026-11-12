@@ -2,6 +2,7 @@
 /**
  * SLearning - Dashboard Murid
  * Versi Terintegrasi dengan Pengumuman / Broadcast Waka
+ * Desain Navbar Konsisten dengan Dashboard Guru
  */
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -255,18 +256,79 @@ unset($_SESSION['flash_murid']);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SLearning | Dashboard Murid</title>
+<link rel="icon" type="image/png" href="assets/img/logo-smkn7.png">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-:root{--yellow:#fff8d6;--sage:#6d8c6d;--sage-dark:#577357;--sage-light:#e8f0e8;--ink:#263326;--muted:#687968;--line:#dce7dc}
-*{box-sizing:border-box}body{margin:0;background:#f4f7f5;color:var(--ink);font-family:'Plus Jakarta Sans',Arial,sans-serif}
-a{color:inherit;text-decoration:none}.header{background:linear-gradient(180deg,var(--yellow),#fff);border-bottom:1px solid #eee5bd;position:sticky;top:0;z-index:5}
-.header-top{max-width:1150px;margin:auto;padding:18px 24px;display:flex;justify-content:space-between;align-items:center;gap:15px}
-.logo{font-size:22px;font-weight:800;color:#2f402f}.logo span{font-size:12px;background:var(--sage-light);padding:5px 10px;border-radius:30px;color:var(--sage)}
-.header-actions{display:flex;gap:10px;align-items:center}.header-actions a{padding:9px 13px;border-radius:30px;background:#fff;border:1px solid var(--line);font-size:13px;font-weight:700}
-.nav{max-width:1150px;margin:auto;padding:0 16px;display:flex;gap:5px;overflow-x:auto}.nav a{padding:13px 16px;font-size:13px;font-weight:700;color:var(--muted);white-space:nowrap;border-radius:10px 10px 0 0}.nav a.active,.nav a:hover{background:#fff;color:var(--ink);border-bottom:3px solid var(--sage)}
-.container{max-width:1100px;margin:30px auto;padding:0 22px 60px}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:25px;margin-bottom:18px;box-shadow:0 5px 18px #6d8c6d0c}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.stat{display:flex;gap:15px;align-items:center}.stat-icon{font-size:25px;background:var(--yellow);padding:15px;border-radius:14px}.muted{color:var(--muted);font-size:13px}.btn{display:inline-block;background:var(--sage);color:#fff;border:0;border-radius:30px;padding:11px 17px;font-weight:800;font-size:13px;cursor:pointer}.btn:hover{background:var(--sage-dark)}.btn-light{background:#fff;color:var(--sage-dark);border:1px solid var(--line)}
-input,select,textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fbfdfb;margin:6px 0 14px}label{font-size:13px;font-weight:700}
+
+:root { 
+    --nav-yellow: #FFF8D6; --nav-yellow-dark: #F2E7B5; 
+    --sage-body: #F4F7F5; --sage-50: #E8F0E8; --sage-100: #D1E0D1;
+    --sage-300: #9FBA9F; --sage-500: #6D8C6D; --sage-600: #577357; 
+    --sage-800: #2F402F; --sage-900: #1D261D; --bg-card: #FFFFFF;
+    --shadow-sm: 0 4px 12px rgba(109, 140, 109, 0.05);
+    --shadow-md: 0 8px 24px rgba(109, 140, 109, 0.08);
+    --shadow-lg: 0 16px 40px rgba(109, 140, 109, 0.12);
+    --radius-sm: 12px; --radius-md: 16px; --radius-lg: 24px;
+    
+    /* Variabel lama untuk elemen spesifik di murid */
+    --yellow: #fff8d6; --sage: #6d8c6d; --sage-dark: #577357; 
+    --sage-light: #e8f0e8; --ink: #263326; --muted: #687968; --line: #dce7dc;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--sage-body); color: var(--sage-900); font-family: 'Plus Jakarta Sans', Arial, sans-serif; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+
+/* ================= Navbar Mirip Guru ================= */
+.header { background: linear-gradient(180deg, var(--nav-yellow) 0%, #FFFDF6 100%); position: relative; z-index: 10; padding-top: 16px; border-bottom: 1px solid var(--nav-yellow-dark); box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
+.header-top { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 32px 16px; }
+.logo { display: flex; align-items: center; gap: 12px; text-decoration: none; font-size: 22px; font-weight: 800; color: var(--sage-800); letter-spacing: -0.5px; }
+.logo svg { width: 30px; height: 30px; color: var(--sage-600); }
+
+.header-icons { display: flex; align-items: center; gap: 24px; }
+.header-icons a { color: var(--sage-600); transition: all 0.3s ease; position: relative; display: flex; align-items: center; text-decoration: none; background: #FFFFFF; padding: 10px; border-radius: 50%; border: 1px solid var(--sage-50); box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
+.header-icons a:hover { color: var(--sage-900); background: var(--sage-50); transform: translateY(-2px); border-color: var(--sage-100); }
+.header-icons svg { width: 20px; height: 20px; }
+.notif-dot { position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; background: #E07A5F; border-radius: 50%; border: 2px solid #FFFFFF; }
+
+.nav-tabs { display: flex; justify-content: flex-start; gap: 8px; max-width: 1200px; margin: 0 auto; padding: 0 32px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+.nav-tabs::-webkit-scrollbar { display: none; }
+.nav-tab { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 20px; text-decoration: none; color: var(--sage-600); font-size: 13px; font-weight: 600; transition: all 0.3s ease; position: relative; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+.nav-tab svg { width: 20px; height: 20px; stroke-width: 2.2; }
+.nav-tab:hover { color: var(--sage-800); background: rgba(255, 255, 255, 0.6); }
+.nav-tab.active { color: var(--sage-900); background: #FFFFFF; }
+.nav-tab.active::after { content: ''; position: absolute; bottom: 0; left: 15%; width: 70%; height: 3px; background: var(--sage-500); border-radius: 4px 4px 0 0; }
+.nav-tab.tab-warning { color: #D84315; }
+.nav-tab.tab-warning.active { color: #C62828; }
+.nav-tab.tab-warning.active::after { background: #C62828; }
+
+.dropdown { position: relative; }
+.dropdown-content { display: none; position: absolute; right: 0; top: 55px; background-color: #FFFFFF; min-width: 180px; box-shadow: var(--shadow-md); border-radius: var(--radius-sm); border: 1px solid var(--sage-100); z-index: 100; overflow: hidden; }
+.dropdown-content a { color: var(--sage-800); padding: 14px 18px; text-decoration: none; display: flex; align-items: center; justify-content: space-between; font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--sage-50); border-radius: 0; box-shadow: none; }
+.dropdown-content a:hover { background-color: var(--sage-50); transform: none; }
+.dropdown-content .badge-notif { background: #E07A5F; color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+.show-dropdown { display: block; }
+
+/* Modal Panduan */
+.modal-overlay { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(29, 38, 29, 0.6); align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+.modal-content { background-color: #fff; padding: 30px; border-radius: var(--radius-md); max-width: 500px; width: 90%; box-shadow: var(--shadow-lg); animation: modalFadeIn 0.3s ease-out; }
+@keyframes modalFadeIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px dashed var(--sage-100); padding-bottom: 16px; }
+.modal-header h3 { color: var(--sage-900); font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 8px; margin: 0; }
+.close-btn { background: var(--sage-50); border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+.close-btn:hover { background: #E07A5F; color: #fff; }
+.modal-body ul { list-style: none; padding-left: 0; margin: 0; }
+.modal-body li { margin-bottom: 14px; font-size: 13.5px; color: var(--sage-600); line-height: 1.6; padding-left: 28px; position: relative; }
+.modal-body li::before { content: '✅'; position: absolute; left: 0; font-size: 14px; top: 2px; }
+.modal-body li strong { color: var(--sage-900); font-weight: 800; }
+
+/* ================= Body Styling ================= */
+.container{max-width:1100px;margin:30px auto;padding:0 22px 60px}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:25px;margin-bottom:18px;box-shadow:0 5px 18px #6d8c6d0c}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}.stat{display:flex;gap:15px;align-items:center}.stat-icon{font-size:25px;background:var(--yellow);padding:15px;border-radius:14px}.muted{color:var(--muted);font-size:13px}
+.btn{display:inline-block;background:var(--sage);color:#fff;border:0;border-radius:30px;padding:11px 17px;font-weight:800;font-size:13px;cursor:pointer}.btn:hover{background:var(--sage-dark)}.btn-light{background:#fff;color:var(--sage-dark);border:1px solid var(--line)}
+input,select,textarea{font:inherit;width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fbfdfb;margin:6px 0 14px; outline: none; transition: all 0.3s ease;}
+input:focus,select:focus,textarea:focus { border-color: var(--sage); box-shadow: 0 0 0 4px rgba(109, 140, 109, 0.1); }
+label{font-size:13px;font-weight:700}
 table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;border-bottom:1px solid var(--line);font-size:13px}
 .alert{padding:13px 16px;border-radius:12px;margin-bottom:18px;background:#e8f5e9;color:#28652d}.alert.error{background:#ffefed;color:#a43b30}
 .badge{display:inline-block;padding:5px 10px;border-radius:30px;background:var(--yellow);font-size:11px;font-weight:800}
@@ -274,25 +336,65 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
 .notif-item:last-child { border-bottom: none; }
 .badge-pengumuman { background: #FFECB3 !important; color: #E65100 !important; border: 1px solid #FFE082; }
 .isi-pengumuman { margin-top: 8px; font-size: 13px; color: var(--ink); line-height: 1.6; padding-left: 12px; border-left: 3px solid #FFCA28; background: #FFFAEC; padding: 10px 12px; border-radius: 0 8px 8px 0; }
-@media(max-width:600px){.header-top{padding:14px}.container{padding:0 13px}.card{padding:18px}.header-actions a{font-size:11px;padding:8px}}
+@media(max-width:768px){.header-top{padding:14px 20px;flex-wrap:wrap;gap:16px}.nav-tabs{padding:0 16px}.container{padding:0 13px}.card{padding:18px}}
 </style>
 </head>
 <body>
 <header class="header">
   <div class="header-top">
-    <a class="logo" href="murid.php">SLearning <span>Murid</span></a>
-    <div class="header-actions">
-      <a href="murid.php?page=profil"><?= e($nama_murid) ?></a>
-      <a href="logout.php" onclick="return confirm('Keluar dari SLearning?')">Keluar</a>
+    <a href="murid.php?page=beranda" class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+      Slearning <span style="font-size: 12px; background: var(--sage-100); padding: 4px 8px; border-radius: 20px; color: var(--sage-800); margin-left: 8px;">Murid</span>
+    </a>
+    
+    <div class="header-icons">
+      <a href="#" onclick="bukaPanduan(event)" title="Buku Panduan Penggunaan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+      </a>
+
+      <div class="dropdown">
+        <a href="#" onclick="toggleDropdown(event)" title="Menu Lanjutan">
+          <?php if(!empty($notifikasi)): ?><div class="notif-dot"></div><?php endif; ?>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        </a>
+        
+        <div id="menuLanjutan" class="dropdown-content">
+          <a href="murid.php?page=notif">
+            Notifikasi 
+            <?php if(!empty($notifikasi)): ?><span class="badge-notif">Baru</span><?php endif; ?>
+          </a>
+          <a href="murid.php?page=profil">Pengaturan Profil</a>
+          <a href="logout.php" onclick="return confirm('Apakah Anda yakin ingin keluar dari Slearning?')" style="color: #E07A5F;">Keluar Akun</a>
+        </div>
+      </div>
     </div>
   </div>
-  <nav class="nav">
-    <?php
-    $menu = ['beranda'=>'Beranda','kelas'=>'Kelas','absensi'=>'Absensi','tugas'=>'Tugas','quiz'=>'Quiz','notif'=>'Notifikasi','laporan'=>'Laporan','profil'=>'Profil'];
-    foreach ($menu as $key=>$label):
-    ?>
-      <a class="<?= $page===$key?'active':'' ?>" href="murid.php?page=<?= e($key) ?>"><?= e($label) ?></a>
-    <?php endforeach; ?>
+
+  <nav class="nav-tabs">
+    <a href="murid.php?page=beranda" class="nav-tab <?= $page==='beranda'?'active':'' ?>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>Beranda</span>
+    </a>
+    <a href="murid.php?page=kelas" class="nav-tab <?= in_array($page, ['kelas','detail_kelas']) ?'active':'' ?>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+      <span>Kelas</span>
+    </a>
+    <a href="murid.php?page=absensi" class="nav-tab <?= $page==='absensi'?'active':'' ?>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 16 2 2 4-4"/></svg>
+      <span>Absensi</span>
+    </a>
+    <a href="murid.php?page=tugas" class="nav-tab <?= $page==='tugas'?'active':'' ?>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span>Tugas</span>
+    </a>
+    <a href="murid.php?page=quiz" class="nav-tab <?= in_array($page, ['quiz','kerjakan_quiz']) ?'active':'' ?>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="9" y1="10" x2="9.01" y2="10"/></svg>
+      <span>Quiz</span>
+    </a>
+    <a href="murid.php?page=laporan" class="nav-tab tab-warning <?= $page==='laporan'?'active':'' ?>">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+      <span>Lapor</span>
+    </a>
   </nav>
 </header>
 <main class="container">
@@ -425,7 +527,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
     <?php endforeach; ?></select>
     <label>Kategori</label><select name="kategori" required><option value="">Pilih kategori</option><option>Perkataan Kasar / Bullying</option><option>Pelecehan / Tindak Kekerasan</option><option>Kecurangan / Menyontek</option><option>Sikap Tidak Profesional</option><option>Lainnya</option></select>
     <label>Keterangan</label><textarea name="deskripsi" rows="4" required></textarea>
-    <button class="btn" name="kirim_laporan">Kirim Laporan</button>
+    <button class="btn" name="kirim_laporan" style="background: #C62828;">Kirim Laporan</button>
   </form>
   </div>
 
@@ -474,6 +576,55 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
       <?php endif; ?>
   </div>
 <?php endif; ?>
+
+<!-- ================= MODAL BUKU PANDUAN ================= -->
+<div id="modalPanduan" class="modal-overlay">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        Panduan Siswa
+      </h3>
+      <button onclick="tutupPanduan()" class="close-btn">&times;</button>
+    </div>
+    <div class="modal-body">
+      <ul>
+        <li><strong>Beranda:</strong> Halaman utama berisi ringkasan tugas aktif, quiz, dan pengumuman sekolah.</li>
+        <li><strong>Kelas:</strong> Tempat untuk meminta izin bergabung kelas menggunakan kode dari guru.</li>
+        <li><strong>Absensi:</strong> Fitur untuk mengisi kehadiran (Hadir/Izin/Sakit) pada sesi absensi yang telah dibuka.</li>
+        <li><strong>Tugas:</strong> Panel untuk melihat instruksi tugas yang diberikan dan mengunggah file jawaban.</li>
+        <li><strong>Quiz:</strong> Mengerjakan kuis pilihan ganda yang disiapkan oleh guru pengampu.</li>
+        <li><strong>Lapor:</strong> Mengirimkan laporan pelanggaran tata tertib langsung ke pihak sekolah/waka.</li>
+      </ul>
+    </div>
+  </div>
+</div>
 </main>
+
+<script>
+function toggleDropdown(e) {
+    e.preventDefault();
+    document.getElementById("menuLanjutan").classList.toggle("show-dropdown");
+}
+function bukaPanduan(e) {
+    e.preventDefault();
+    document.getElementById('modalPanduan').style.display = 'flex';
+}
+function tutupPanduan() {
+    document.getElementById('modalPanduan').style.display = 'none';
+}
+window.addEventListener('click', function(e) {
+    if (!e.target.closest('.dropdown')) {
+        let dropdown = document.getElementById("menuLanjutan");
+        if (dropdown && dropdown.classList.contains('show-dropdown')) {
+            dropdown.classList.remove('show-dropdown');
+        }
+    }
+    let modal = document.getElementById('modalPanduan');
+    if (e.target === modal) {
+        tutupPanduan();
+    }
+});
+</script>
 </body>
 </html>
