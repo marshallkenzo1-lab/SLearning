@@ -233,11 +233,15 @@ if ($inKelas !== '0') {
 }
 
 // 2. Ambil Pengumuman / Broadcast dari Waka
-$r_waka = mysqli_query($koneksi, "SELECT judul, 'pengumuman' as tipe, waktu as tanggal, isi FROM pengumuman WHERE target IN ('semua', 'murid')");
-if ($r_waka) {
-    while ($p = mysqli_fetch_assoc($r_waka)) {
-        $notifikasi[] = $p;
+try {
+    $r_waka = mysqli_query($koneksi, "SELECT judul, 'pengumuman' as tipe, waktu as tanggal, isi FROM pengumuman WHERE target IN ('semua', 'murid')");
+    if ($r_waka) {
+        while ($p = mysqli_fetch_assoc($r_waka)) {
+            $notifikasi[] = $p;
+        }
     }
+} catch (mysqli_sql_exception $ex) {
+    // Tabel pengumuman belum ada / strukturnya beda: lewati, jangan matikan halaman.
 }
 
 // 3. Urutkan semua notifikasi berdasarkan tanggal paling baru (DESC)
