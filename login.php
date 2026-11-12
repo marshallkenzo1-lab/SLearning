@@ -46,7 +46,7 @@ if (isset($_SESSION["user_id"], $_SESSION["jenis"])) {
     }
 }
 
-$host = "localhost"; $dbname = "slearning"; $dbuser = "root"; $dbpass = "";
+$host = "localhost"; $dbname = "slearning_db"; $dbuser = "root"; $dbpass = "";
 $error = ""; $success = ""; $mode = $_POST["mode"] ?? (($_GET["mode"] ?? "") === "register" ? "register" : "login");
 $nama = ""; $username = ""; $email = ""; $jenis = "murid"; $registrationCode = "";
 $nis = ""; $jurusan = ""; $loginJenis = $_POST["login_type"] ?? "murid"; $loginNama = trim($_POST["login_nama"] ?? ""); $loginNis = trim($_POST["login_nis"] ?? "");
@@ -116,7 +116,7 @@ try {
         $seed->execute([$superAdminUsername, password_hash($superAdminPassword, PASSWORD_DEFAULT)]);
     }
 } catch (PDOException $e) {
-    die("Koneksi atau struktur database gagal. Periksa database slearning_ dan tabel login.");
+    die("Koneksi atau struktur database gagal. Periksa database slearning_db dan tabel login.");
 }
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
@@ -186,7 +186,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $error = "Password wajib diisi!";
         } elseif ($loginType === "murid") {
             if ($loginNama === "") $error = "Nama lengkap atau NIS dan password wajib diisi!";
-            elseif (!preg_match('/^[A-Za-z0-9 ]+$/', $loginNama)) $error = "Nama/NIS hanya boleh berisi huruf dan angka.";
+            elseif (!preg_match('/^[A-Za-z0-9 \.\'\,\-]+$/', $loginNama)) $error = "Nama/NIS mengandung karakter yang tidak diizinkan.";
             else {
                 // Satu kolom: boleh diisi NIS atau nama lengkap. Jika ada nama yang sama, cocokkan lewat password.
                 $stmt = $pdo->prepare("SELECT * FROM login WHERE jenis='murid' AND (nis = ? OR nama = ?)");
@@ -497,7 +497,7 @@ a { color:inherit; text-decoration:none; }
                     <select name="jurusan" id="jurusan" class="select-box">
                         <option value="">-- Pilih jurusan --</option>
                         <?php foreach ($jurusanList as $j): ?>
-                            <option value="<?= htmlspecialchars($j) ?>" <?= $jurusan === $j ? "selected" : "" ?>><?= htmlspecialchars($j) ?></option>
+                            <option value="<?= htmlspecialchars($j) ?>" <?= $jurusan === $j ? "selected" : "" ?>><option><?= htmlspecialchars($j) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
@@ -539,7 +539,7 @@ a { color:inherit; text-decoration:none; }
                 <label for="login_nama">Nama Lengkap atau NIS</label>
                 <div class="input-box">
                     <span class="input-icon">♙</span>
-                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama lengkap atau NIS" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="username" maxlength="100" oninput="this.value=this.value.replace(/[^A-Za-z0-9 ]/g,'')">
+                    <input type="text" name="login_nama" id="login_nama" placeholder="Masukkan nama lengkap atau NIS" value="<?= htmlspecialchars($loginNama) ?>" autocomplete="username" maxlength="100" oninput="this.value=this.value.replace(/[^A-Za-z0-9 \.\'\,\-]/g,'')">
                 </div>
             </div>
 
