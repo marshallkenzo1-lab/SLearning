@@ -44,7 +44,7 @@ if (isset($_SESSION["user_id"], $_SESSION["jenis"])) {
     }
 }
 
-$host = "localhost"; $dbname = "slearning_db"; $dbuser = "root"; $dbpass = "";
+$host = "localhost"; $dbname = "slearning"; $dbuser = "root"; $dbpass = "";
 $error = ""; $success = ""; $mode = $_POST["mode"] ?? (($_GET["mode"] ?? "") === "register" ? "register" : "login");
 $nama = ""; $username = ""; $email = ""; $jenis = "murid"; $registrationCode = "";
 $nis = ""; $jurusan = ""; $loginJenis = $_POST["login_type"] ?? "murid"; $loginNama = trim($_POST["login_nama"] ?? ""); $loginNis = trim($_POST["login_nis"] ?? "");
@@ -110,7 +110,7 @@ try {
         $seed->execute([$superAdminUsername, password_hash($superAdminPassword, PASSWORD_DEFAULT)]);
     }
 } catch (PDOException $e) {
-    die("Koneksi atau struktur database gagal. Periksa database slearning_db dan tabel login.");
+    die("Koneksi atau struktur database gagal. Periksa database slearning_ dan tabel login.");
 }
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
