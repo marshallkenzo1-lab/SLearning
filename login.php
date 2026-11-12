@@ -37,6 +37,8 @@ if (isset($_SESSION["user_id"], $_SESSION["jenis"])) {
     $roleNow = $_SESSION["jenis"];
     if (isset($dashboardFiles[$roleNow]) && in_array($_SESSION["level"] ?? "", $levelByJenis[$roleNow], true)) {
         $dest = $dashboardFiles[$roleNow];
+        // admin.php belum ada di proyek; waka.php adalah dashboard Waka/Superadmin.
+        if ($roleNow === "admin" && is_file(__DIR__ . "/waka.php")) $dest = "waka.php";
         if (is_file(__DIR__ . "/" . $dest)) { header("Location: " . $dest); exit; }
         $dashboardMissing = $dest;
     } else {
@@ -87,15 +89,19 @@ try {
     $levelColumn = $pdo->query("SHOW COLUMNS FROM login LIKE 'level'")->fetch();
     if ($levelColumn && strtolower($levelColumn['Type']) !== "enum('super admin','admin','user')") {
         $pdo->exec("ALTER TABLE login MODIFY level VARCHAR(50) NOT NULL DEFAULT 'user'");
-        // Kode aplikasi memakai pemetaan tetap: waka=super admin, guru=admin, murid=user.
-        $pdo->exec("UPDATE login SET level = CASE
-            WHEN jenis = 'waka' THEN 'super admin'
-            WHEN jenis = 'guru' THEN 'admin'
-            WHEN jenis = 'murid' THEN 'user'
-            ELSE 'user'
-        END");
         $pdo->exec("ALTER TABLE login MODIFY level ENUM('super admin','admin','user') NOT NULL DEFAULT 'user'");
     }
+
+    // Level dipaksa konsisten dengan pemetaan tetap (waka=super admin, guru=admin,
+    // admin=super admin, murid=user) setiap kali halaman login dibuka. Tanpa ini,
+    // akun waka/guru yang level-nya tidak sesuai (mis. diinput manual lewat phpMyAdmin)
+    // dihancurkan sesinya oleh pemeriksaan level saat membuka login.php lagi.
+    $pdo->exec("UPDATE login SET level = CASE
+        WHEN jenis = 'waka' THEN 'super admin'
+        WHEN jenis = 'guru' THEN 'admin'
+        WHEN jenis = 'admin' THEN 'super admin'
+        ELSE 'user'
+    END");
 
     // Pastikan jenis 'admin' (Petugas/Admin) tersedia pada tabel lama.
     $jenisColumn = $pdo->query("SHOW COLUMNS FROM login LIKE 'jenis'")->fetch();
@@ -198,22 +204,46 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             }
         } else {
             // Guru, Waka, dan Petugas/Admin (super admin) masuk dengan username + password.
+            // Dicari berdasarkan username saja (tanpa filter jenis): akun waka bisa saja
+            // terdaftar sebagai guru karena form pendaftaran tidak menyediakan waka, dan
+            // akun Petugas/Admin juga sering dicoba lewat tab Waka. Tab hanya petunjuk;
+            // dashboard tujuan tetap mengikuti jenis akun yang sebenarnya.
             if ($username === "") $error = "Username dan password wajib diisi!";
             else {
-                $stmt = $pdo->prepare("SELECT * FROM login WHERE username = ? AND jenis = ? LIMIT 1");
-                $stmt->execute([$username, $loginType]);
+                $stmt = $pdo->prepare("SELECT * FROM login WHERE username = ? LIMIT 1");
+                $stmt->execute([$username]);
                 $user = $stmt->fetch();
-                if ($user && password_verify($password, $user["password"])) {
-                    $statusAkun = $user["status_persetujuan"] ?? "approved";
-                    if ($statusAkun === "pending") {
-                        $error = "Akun Anda belum aktif. Hubungi pengelola sekolah.";
-                    } elseif ($statusAkun === "rejected") {
-                        $error = "Pendaftaran akun ditolak. Hubungi pengelola sekolah.";
+                $loginOk = false;
+                if ($user && password_verify($password, (string)$user["password"])) {
+                    $loginOk = true;
+                } elseif ($user && !preg_match('/^\$2[aby]\$|^\$argon/i', (string)$user["password"]) && hash_equals((string)$user["password"], $password)) {
+                    // Password tersimpan polos (biasanya diinput langsung lewat phpMyAdmin):
+                    // diterima, lalu otomatis diubah menjadi hash agar login berikutnya aman.
+                    $hashed = password_hash($password, PASSWORD_DEFAULT);
+                    $up = $pdo->prepare("UPDATE login SET password = ? WHERE id = ?");
+                    $up->execute([$hashed, $user["id"]]);
+                    $user["password"] = $hashed;
+                    $loginOk = true;
+                }
+                if ($loginOk) {
+                    if (!in_array($user["jenis"], ["guru", "waka", "admin"], true)) {
+                        // Akun murid hanya boleh masuk lewat tab Siswa (nama/NIS + password).
+                        $error = "Akun ini akun murid. Masuklah melalui tab Siswa.";
                     } else {
-                        startUserSession($user);
-                        $dest = $dashboardFiles[$user["jenis"]];
-                        if (is_file(__DIR__ . "/" . $dest)) { header("Location: " . $dest); exit; }
-                        $dashboardMissing = $dest;
+                        $statusAkun = $user["status_persetujuan"] ?? "approved";
+                        if ($statusAkun === "pending") {
+                            $error = "Akun Anda belum aktif. Hubungi pengelola sekolah.";
+                        } elseif ($statusAkun === "rejected") {
+                            $error = "Pendaftaran akun ditolak. Hubungi pengelola sekolah.";
+                        } else {
+                            startUserSession($user);
+                            $dest = $dashboardFiles[$user["jenis"]];
+                            // admin.php belum ada di proyek, sedangkan waka.php adalah
+                            // dashboard Waka/Superadmin, jadi akun admin diarahkan ke sana.
+                            if ($user["jenis"] === "admin" && is_file(__DIR__ . "/waka.php")) $dest = "waka.php";
+                            if (is_file(__DIR__ . "/" . $dest)) { header("Location: " . $dest); exit; }
+                            $dashboardMissing = $dest;
+                        }
                     }
                 } else {
                     $error = "Username atau password salah!";
