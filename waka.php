@@ -1045,5 +1045,6 @@ window.onclick = function(event) {
 }
 </script>
 
+<script src="assets/js/sl-dialog.js"></script>
 </body>
 </html>

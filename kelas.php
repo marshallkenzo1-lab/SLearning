@@ -136,11 +136,12 @@ if($tugas_dibuka&&!isset($tugas[$tugas_dibuka]))$tugas_dibuka=0;
         <?php else: ?><form method="POST" style="display:flex;gap:6px;margin-top:8px"><input type="hidden" name="absensi_id" value="<?= (int)$ab['id'] ?>"><select name="status" class="form-control" style="padding:7px 9px;font-size:12px"><option value="hadir">Hadir</option><option value="izin">Izin</option><option value="sakit">Sakit</option></select><button name="isi_absen" class="btn btn-yellow btn-sm" type="submit"><?= svg_icon('check',13) ?></button></form><?php endif; ?></div></div>
       <?php endforeach; ?></div><?php endif; ?></section>
     <div class="sidebar-widget dark"><h3>Info Kelas</h3><p class="subtitle">Bagikan kode ke teman sekelas</p>
-      <div class="code-box" style="background:#1c1c1f;border-color:#333;color:#fff" onclick="navigator.clipboard.writeText('<?= e($kelas['kode_gabung']) ?>');alert('Kode disalin.');"><?= svg_icon('copy',15) ?> <?= e($kelas['kode_gabung']) ?></div>
+      <div class="code-box" style="background:#1c1c1f;border-color:#333;color:#fff" onclick="navigator.clipboard.writeText('<?= e($kelas['kode_gabung']) ?>');window.SLDialog?SLDialog.toast('Kode berhasil disalin'):alert('Kode disalin.');"><?= svg_icon('copy',15) ?> <?= e($kelas['kode_gabung']) ?></div>
       <a href="murid.php#kelas" class="btn btn-yellow btn-sm btn-block" style="margin-top:12px"><?= svg_icon('arrow-left',14) ?> Semua Kelasku</a></div>
   </aside></div>
 </div></main>
 <footer class="mini"><div class="container"><div class="footer-inner"><span>© <?= date('Y') ?> <strong>SLearning</strong> — <?= e($kelas['nama_kelas']) ?></span><span><a href="murid.php">Dashboard</a> • <a href="quiziz.php">Quiziz</a></span></div></div></footer>
 <script>(function(){var b=document.getElementById('burger'),r=document.getElementById('navRight');if(b&&r){b.addEventListener('click',function(){r.classList.toggle('open');});}})();</script>
+<script src="assets/js/sl-dialog.js"></script>
 </body>
 </html>

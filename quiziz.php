@@ -125,7 +125,7 @@ if ($qid===0) {
       <p class="hint" style="margin-bottom:18px"><?= e($quiz['nama_kelas']) ?> • <?= (int)$hasil['benar'] ?>/<?= (int)$hasil['total'] ?> benar</p>
       <div style="font-family:var(--font-h);font-size:64px;font-weight:800;line-height:1;color:<?= (int)$hasil['skor']>=75?'var(--green-tx)':((int)$hasil['skor']>=60?'#92600a':'var(--red-tx)') ?>"><?= (int)$hasil['skor'] ?></div>
       <p class="hint" style="margin:6px 0 20px"><?= (int)$hasil['skor']>=75?'Sangat baik, pertahankan.':((int)$hasil['skor']>=60?'Cukup baik, tingkatkan lagi.':'Jangan menyerah, pelajari lagi materinya.') ?> • <?= e(tanggal_id($hasil['dikerjakan_at'])) ?></p>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><a href="quiziz.php?id=<?= (int)$qid ?>&ulangi=1" class="btn btn-yellow" onclick="return confirm('Kerjakan ulang? Nilai sebelumnya akan diganti.')"><?= svg_icon('arrow-right',16) ?> Kerjakan Ulang</a><a href="quiziz.php" class="btn btn-ghost">Semua Quiz</a><a href="<?= e($dashboard) ?>" class="btn btn-dark">Dashboard</a></div>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><a href="quiziz.php" class="btn btn-ghost">Semua Quiz</a><a href="<?= e($dashboard) ?>" class="btn btn-dark">Dashboard</a></div>
     </section>
     <?php if(!empty($soal_list)): ?><h3 style="font-size:16px;margin:20px 0 12px">Pembahasan jawaban</h3>
       <?php foreach($soal_list as $i=>$so): $pj = $jw[$so['id']] ?? $jw[(string)$so['id']] ?? '-'; $ok = ($pj===$so['kunci']); ?>
@@ -173,7 +173,7 @@ if ($qid===0) {
       (function(){
         var total = <?= (int)$quiz['durasi_menit'] ?>*60, el=document.getElementById('countdown'), form=document.getElementById('quizForm');
         function fmt(s){var m=Math.floor(s/60),ss=s%60;return (m<10?'0':'')+m+':'+(ss<10?'0':'')+ss;}
-        var t=setInterval(function(){el.textContent=fmt(total);if(total<=0){clearInterval(t);alert('Waktu habis. Jawaban dikumpulkan otomatis.');form.submit();}total--;},1000);
+        var t=setInterval(function(){el.textContent=fmt(total);if(total<=0){clearInterval(t);var h=document.createElement('input');h.type='hidden';h.name='kerjakan';h.value='1';form.appendChild(h);(window.SLDialog?SLDialog.alert('Waktu habis. Jawaban dikumpulkan otomatis.',{title:'Waktu Habis',icon:'clock',auto:2500,okText:'Lanjut'}):Promise.resolve()).then(function(){form.submit();});}total--;},1000);
         el.textContent=fmt(total);
         var prog=document.getElementById('progress'), n=<?= count($soal_list) ?>;
         form.addEventListener('change',function(){var d=new Set();form.querySelectorAll('input[type=radio]:checked').forEach(function(r){d.add(r.name);});prog.textContent=d.size+' dari '+n+' soal terjawab';});
@@ -184,5 +184,6 @@ if ($qid===0) {
 </div></main>
 <footer class="mini"><div class="container"><div class="footer-inner"><span>© <?= date('Y') ?> <strong>SLearning</strong> — Quiziz</span><span><a href="<?= e($dashboard) ?>">Dashboard</a> • <a href="logout.php">Keluar</a></span></div></div></footer>
 <script>(function(){var b=document.getElementById('burger'),l=document.getElementById('navLinks'),r=document.getElementById('navRight');if(b){b.addEventListener('click',function(){var o=l.classList.toggle('open');if(r)r.classList.toggle('open',o);});}})();</script>
+<script src="assets/js/sl-dialog.js"></script>
 </body>
 </html>

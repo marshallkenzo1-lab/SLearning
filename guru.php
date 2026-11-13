@@ -2025,5 +2025,6 @@ function salinManual(teks, callback) {
   input.remove();
 }
 </script>
+<script src="assets/js/sl-dialog.js"></script>
 </body>
 </html>

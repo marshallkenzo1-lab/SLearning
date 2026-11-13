@@ -735,5 +735,6 @@ window.addEventListener('click', function(e) {
     }
 });
 </script>
+<script src="assets/js/sl-dialog.js"></script>
 </body>
 </html>

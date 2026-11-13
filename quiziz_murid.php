@@ -198,8 +198,7 @@ if(empty($soal_list)) {
         if (sisaDetik <= 0) {
             clearInterval(interval);
             elCountdown.textContent = "00:00";
-            alert('Waktu habis! Jawaban Anda sedang dikumpulkan otomatis.');
-            form.submit();
+            (window.SLDialog ? SLDialog.alert('Waktu habis! Jawaban Anda sedang dikumpulkan otomatis.', {title:'Waktu Habis', icon:'clock', auto:2500, okText:'Lanjut'}) : Promise.resolve()).then(function(){ form.submit(); });
         }
         sisaDetik--;
     }, 1000);
@@ -224,5 +223,6 @@ if(empty($soal_list)) {
     });
 })();
 </script>
+<script src="assets/js/sl-dialog.js"></script>
 </body>
 </html>

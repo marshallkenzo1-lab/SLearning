@@ -106,5 +106,6 @@ if ($jenis==='guru') {
 </div></main>
 <footer class="mini"><div class="container"><div class="footer-inner"><span>© <?= date('Y') ?> <strong>SLearning</strong> — Profil</span><span><a href="<?= e($dashboard) ?>">Dashboard</a></span></div></div></footer>
 <script>(function(){var b=document.getElementById('burger'),r=document.getElementById('navRight');if(b&&r){b.addEventListener('click',function(){r.classList.toggle('open');});}})();</script>
+<script src="assets/js/sl-dialog.js"></script>
 </body>
 </html>
