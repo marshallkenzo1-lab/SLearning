@@ -564,7 +564,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
   <div class="card"><h2>Quiz Tersedia</h2>
   <?php $quiz=$inKelas!=='0'?stmt_rows($koneksi,"SELECT q.id,q.judul,k.nama_kelas FROM quiz q JOIN kelas k ON k.id=q.kelas_id WHERE q.kelas_id IN ($inKelas) ORDER BY q.id DESC"):[]; ?>
   <?php if (!$quiz): ?><p class="muted">Belum ada quiz tersedia.</p><?php else: foreach($quiz as $q): ?>
-    <div style="padding:12px 0;border-bottom:1px solid var(--line)"><b><?= e($q['judul']) ?></b><p class="muted"><?= e($q['nama_kelas']) ?></p><a class="btn" href="murid.php?page=kerjakan_quiz&quiz_id=<?= (int)$q['id'] ?>">Buka Quiz</a></div>
+    <div style="padding:12px 0;border-bottom:1px solid var(--line)"><b><?= e($q['judul']) ?></b><p class="muted"><?= e($q['nama_kelas']) ?></p><a class="btn" href="quiziz_murid.php?id=<?= (int)$q['id'] ?>">Buka Quiz</a></div>
   <?php endforeach; endif; ?></div>
 
 <!-- ================= HALAMAN NOTIFIKASI ================= -->
