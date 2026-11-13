@@ -124,6 +124,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sql .= ', password=?'; $types .= 's';
                 $params[] = password_hash($passBaru, PASSWORD_DEFAULT);
             }
+            
+            // Proses Upload Foto Profil Baru
+            if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
+                $f = $_FILES['foto'];
+                $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+                $allowed = ['jpg', 'jpeg', 'png', 'webp'];
+                
+                if (!in_array($ext, $allowed)) {
+                    flash_murid('Format foto harus JPG, PNG, atau WEBP.', 'error');
+                    header('Location: murid.php?page=profil'); exit;
+                }
+                
+                if ($f['size'] > 2 * 1024 * 1024) {
+                    flash_murid('Ukuran foto maksimal 2 MB.', 'error');
+                    header('Location: murid.php?page=profil'); exit;
+                }
+                
+                $dir = __DIR__ . '/uploads/profil/';
+                if (!is_dir($dir)) mkdir($dir, 0755, true);
+                
+                $namaFileBaru = 'profil_murid_' . $uid . '_' . time() . '.' . $ext;
+                if (move_uploaded_file($f['tmp_name'], $dir . $namaFileBaru)) {
+                    $pathFotoDB = 'uploads/profil/' . $namaFileBaru;
+                    $sql .= ', foto=?';
+                    $types .= 's';
+                    $params[] = $pathFotoDB;
+                    
+                    // Hapus foto lama jika ada dan bukan bawaan default
+                    if (!empty($user['foto']) && is_file(__DIR__ . '/' . $user['foto'])) {
+                        @unlink(__DIR__ . '/' . $user['foto']);
+                    }
+                } else {
+                    flash_murid('Gagal mengunggah foto profil.', 'error');
+                    header('Location: murid.php?page=profil'); exit;
+                }
+            }
+
             $sql .= ' WHERE id=?'; $types .= 'i'; $params[] = $uid;
             
             $st = mysqli_prepare($koneksi, $sql);
@@ -253,6 +290,19 @@ $page = $_GET['page'] ?? 'beranda';
 $quizId = (int)($_GET['quiz_id'] ?? 0);
 $flash = $_SESSION['flash_murid'] ?? null;
 unset($_SESSION['flash_murid']);
+
+// Fungsi inisial nama jika foto profil tidak ada
+function inisial_nama($nama) {
+    $parts = explode(' ', trim($nama));
+    $inisial = '';
+    foreach ($parts as $p) {
+        if (!empty($p)) {
+            $inisial .= strtoupper($p[0]);
+            if (strlen($inisial) >= 2) break;
+        }
+    }
+    return $inisial ?: '?';
+}
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -285,7 +335,42 @@ a { color: inherit; text-decoration: none; }
 /* ================= Navbar Mirip Guru ================= */
 .header { background: linear-gradient(180deg, var(--nav-yellow) 0%, #FFFDF6 100%); position: relative; z-index: 10; padding-top: 16px; border-bottom: 1px solid var(--nav-yellow-dark); box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
 .header-top { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto; padding: 0 32px 16px; }
-.logo { display: flex; align-items: center; gap: 12px; text-decoration: none; font-size: 22px; font-weight: 800; color: var(--sage-800); letter-spacing: -0.5px; }
+.logo-container { display: flex; align-items: center; gap: 16px; }
+
+/* Avatar Murid */
+.murid-avatar-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: transform 0.2s ease;
+}
+.murid-avatar-link:hover {
+    transform: scale(1.05);
+}
+.murid-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px; /* Agak kotak seperti profil */
+    object-fit: cover;
+    border: 2px solid var(--sage-300);
+    background-color: var(--sage-50);
+}
+.murid-avatar-placeholder {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background-color: var(--sage-100);
+    color: var(--sage-800);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    border: 2px solid var(--sage-300);
+}
+
+.logo { display: flex; align-items: center; gap: 10px; text-decoration: none; font-size: 22px; font-weight: 800; color: var(--sage-800); letter-spacing: -0.5px; }
 .logo svg { width: 30px; height: 30px; color: var(--sage-600); }
 
 .header-icons { display: flex; align-items: center; gap: 24px; }
@@ -296,8 +381,20 @@ a { color: inherit; text-decoration: none; }
 
 .nav-tabs { display: flex; justify-content: flex-start; gap: 8px; max-width: 1200px; margin: 0 auto; padding: 0 32px; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
 .nav-tabs::-webkit-scrollbar { display: none; }
-.nav-tab { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 20px; text-decoration: none; color: var(--sage-600); font-size: 13px; font-weight: 600; transition: all 0.3s ease; position: relative; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
-.nav-tab svg { width: 20px; height: 20px; stroke-width: 2.2; }
+/* Hapus icon dan ubah padding/style agar text saja */
+.nav-tab { 
+    display: flex; 
+    align-items: center; 
+    padding: 14px 20px; 
+    text-decoration: none; 
+    color: var(--sage-600); 
+    font-size: 14px; 
+    font-weight: 700; 
+    transition: all 0.3s ease; 
+    position: relative; 
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0; 
+}
+.nav-tab svg { display: none; } /* Sembunyikan ikon */
 .nav-tab:hover { color: var(--sage-800); background: rgba(255, 255, 255, 0.6); }
 .nav-tab.active { color: var(--sage-900); background: #FFFFFF; }
 .nav-tab.active::after { content: ''; position: absolute; bottom: 0; left: 15%; width: 70%; height: 3px; background: var(--sage-500); border-radius: 4px 4px 0 0; }
@@ -346,10 +443,19 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
 <body>
 <header class="header">
   <div class="header-top">
-    <a href="murid.php?page=beranda" class="logo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-      Slearning <span style="font-size: 12px; background: var(--sage-100); padding: 4px 8px; border-radius: 20px; color: var(--sage-800); margin-left: 8px;">Murid</span>
-    </a>
+    <div class="logo-container">
+      <a href="murid.php?page=profil" class="murid-avatar-link" title="Pengaturan Profil">
+        <?php if (!empty($foto_profil) && file_exists(__DIR__ . '/' . $foto_profil)): ?>
+            <img src="<?= e($foto_profil) ?>" alt="Profil <?= e($nama_murid) ?>" class="murid-avatar">
+        <?php else: ?>
+            <div class="murid-avatar-placeholder"><?= e(inisial_nama($nama_murid)) ?></div>
+        <?php endif; ?>
+      </a>
+      <a href="murid.php?page=beranda" class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+        Slearning <span style="font-size: 12px; background: var(--sage-100); padding: 4px 8px; border-radius: 20px; color: var(--sage-800); margin-left: 4px;">Murid</span>
+      </a>
+    </div>
     
     <div class="header-icons">
       <a href="#" onclick="bukaPanduan(event)" title="Buku Panduan Penggunaan">
@@ -375,30 +481,12 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
   </div>
 
   <nav class="nav-tabs">
-    <a href="murid.php?page=beranda" class="nav-tab <?= $page==='beranda'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      <span>Beranda</span>
-    </a>
-    <a href="murid.php?page=kelas" class="nav-tab <?= in_array($page, ['kelas','detail_kelas']) ?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-      <span>Kelas</span>
-    </a>
-    <a href="murid.php?page=absensi" class="nav-tab <?= $page==='absensi'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 16 2 2 4-4"/></svg>
-      <span>Absensi</span>
-    </a>
-    <a href="murid.php?page=tugas" class="nav-tab <?= $page==='tugas'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      <span>Tugas</span>
-    </a>
-    <a href="murid.php?page=quiz" class="nav-tab <?= in_array($page, ['quiz','kerjakan_quiz']) ?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="9" y1="10" x2="9.01" y2="10"/></svg>
-      <span>Quiz</span>
-    </a>
-    <a href="murid.php?page=laporan" class="nav-tab tab-warning <?= $page==='laporan'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-      <span>Lapor</span>
-    </a>
+    <a href="murid.php?page=beranda" class="nav-tab <?= $page==='beranda'?'active':'' ?>">Beranda</a>
+    <a href="murid.php?page=kelas" class="nav-tab <?= in_array($page, ['kelas','detail_kelas']) ?'active':'' ?>">Kelas</a>
+    <a href="murid.php?page=absensi" class="nav-tab <?= $page==='absensi'?'active':'' ?>">Absensi</a>
+    <a href="murid.php?page=tugas" class="nav-tab <?= $page==='tugas'?'active':'' ?>">Tugas</a>
+    <a href="murid.php?page=quiz" class="nav-tab <?= in_array($page, ['quiz','kerjakan_quiz']) ?'active':'' ?>">Quiz</a>
+    <a href="murid.php?page=laporan" class="nav-tab tab-warning <?= $page==='laporan'?'active':'' ?>">Lapor</a>
   </nav>
 </header>
 <main class="container">
@@ -512,12 +600,29 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:12px;bor
 <?php elseif ($page === 'profil'): ?>
   <div class="card"><h2>Pengaturan Profil</h2>
   <form method="post" enctype="multipart/form-data">
+    <div style="display:flex; align-items:center; gap:20px; margin-bottom: 20px;">
+        <?php if (!empty($foto_profil) && file_exists(__DIR__ . '/' . $foto_profil)): ?>
+            <img src="<?= e($foto_profil) ?>" alt="Foto Profil" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; border: 2px solid var(--sage-300);">
+        <?php else: ?>
+            <div style="width: 80px; height: 80px; border-radius: 20px; background: var(--sage-100); display:flex; align-items:center; justify-content:center; font-size:32px; font-weight:800; color:var(--sage-800); border: 2px solid var(--sage-300);">
+                <?= e(inisial_nama($nama_murid)) ?>
+            </div>
+        <?php endif; ?>
+        <div>
+            <label style="margin-bottom:4px; display:block;">Ubah Foto Profil</label>
+            <input type="file" name="foto" accept=".jpg,.jpeg,.png,.webp" style="margin:0; padding:8px; width:auto; border:none; background:transparent;">
+            <p class="muted" style="margin:4px 0 0 0; font-size:11px;">Format: JPG, PNG, WEBP (Maks: 2MB)</p>
+        </div>
+    </div>
+    
     <label>Nama</label><input name="nama" value="<?= e($user['nama']) ?>" required>
     <label>Email</label><input type="email" name="email" value="<?= e($user['email']) ?>" required>
-    <label>Foto Profil</label><input type="file" name="foto" accept=".jpg,.jpeg,.png,.gif">
+    
+    <hr style="border:0; border-top:1px dashed var(--line); margin: 24px 0;">
+    <h3 style="font-size:15px; margin-bottom:12px;">Ubah Kata Sandi</h3>
     <label>Password Lama (isi jika ingin mengganti password)</label><input type="password" name="password_lama">
     <label>Password Baru</label><input type="password" name="password_baru" minlength="8">
-    <button class="btn" name="update_profil">Simpan Profil</button>
+    <button class="btn" name="update_profil">Simpan Perubahan</button>
   </form></div>
 
 <!-- ================= HALAMAN LAPORAN ================= -->

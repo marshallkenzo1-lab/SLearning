@@ -599,12 +599,52 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 .header-icons svg { width: 20px; height: 20px; }
 .notif-dot { position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; background: #E07A5F; border-radius: 50%; border: 2px solid #FFFFFF; }
 
-.nav-tabs { display: flex; justify-content: center; gap: 8px; max-width: 1200px; margin: 0 auto; padding: 0 32px; flex-wrap: wrap; }
-.nav-tab { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 24px; text-decoration: none; color: var(--sage-600); font-size: 13px; font-weight: 600; transition: all 0.3s ease; position: relative; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
-.nav-tab svg { width: 20px; height: 20px; stroke-width: 2.2; }
-.nav-tab:hover { color: var(--sage-800); background: rgba(255, 255, 255, 0.6); }
-.nav-tab.active { color: var(--sage-900); background: #FFFFFF; }
-.nav-tab.active::after { content: ''; position: absolute; bottom: 0; left: 15%; width: 70%; height: 3px; background: var(--sage-500); border-radius: 4px 4px 0 0; }
+.nav-tabs { 
+    display: flex; 
+    justify-content: flex-start; 
+    gap: 16px; 
+    max-width: 1200px; 
+    margin: 0 auto; 
+    padding: 0 32px; 
+    overflow-x: auto; 
+    white-space: nowrap; 
+    -webkit-overflow-scrolling: touch; 
+}
+.nav-tabs::-webkit-scrollbar { display: none; }
+
+.nav-tab { 
+    display: inline-flex; 
+    align-items: center; 
+    padding: 12px 12px 18px 12px; 
+    text-decoration: none; 
+    color: var(--sage-600); 
+    font-size: 15px; 
+    font-weight: 700; 
+    transition: all 0.3s ease; 
+    position: relative; 
+}
+.nav-tab:hover { 
+    color: var(--sage-800); 
+}
+.nav-tab.active { 
+    color: var(--sage-900); 
+}
+.nav-tab.active::after { 
+    content: ''; 
+    position: absolute; 
+    bottom: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 3px; 
+    background: var(--sage-500); 
+    border-radius: 4px 4px 0 0; 
+}
+
+/* Khusus tab peringatan di murid (Lapor) */
+.nav-tab.tab-warning { color: #D84315; }
+.nav-tab.tab-warning:hover { color: #C62828; }
+.nav-tab.tab-warning.active { color: #C62828; }
+.nav-tab.tab-warning.active::after { background: #C62828; }
 
 .container { max-width: 1100px; margin: 0 auto; padding: 40px 32px; position: relative; z-index: 1; }
 
@@ -845,32 +885,25 @@ body::after { content: ''; position: fixed; bottom: -10%; right: -5%; width: 60v
 
   <nav class="nav-tabs">
     <a href="guru.php?page=beranda" class="nav-tab <?= $page==='beranda'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      <span>Beranda</span>
+      Beranda
     </a>
     <a href="guru.php?page=kelas" class="nav-tab <?= $page==='kelas' || $page==='detail_kelas'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-      <span>Kelas</span>
+      Kelas
     </a>
     <a href="guru.php?page=absensi" class="nav-tab <?= $page==='absensi'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="m9 16 2 2 4-4"/></svg>
-      <span>Absensi</span>
+      Absensi
     </a>
     <a href="guru.php?page=rekap_absensi" class="nav-tab <?= $page==='rekap_absensi'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg>
-      <span>Rekap</span>
+      Rekap
     </a>
     <a href="guru.php?page=tugas" class="nav-tab <?= $page==='tugas'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      <span>Tugas</span>
+      Tugas
     </a>
     <a href="guru.php?page=quiz" class="nav-tab <?= $page==='quiz'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="9" y1="14" x2="15" y2="14"/><line x1="9" y1="18" x2="15" y2="18"/><line x1="9" y1="10" x2="9.01" y2="10"/></svg>
-      <span>Quiz</span>
+      Quiz
     </a>
     <a href="guru.php?page=lapor_waka" class="nav-tab <?= $page==='lapor_waka'?'active':'' ?>">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-      <span>Lapor Waka</span>
+      Lapor Waka
     </a>
   </nav>
 </header>

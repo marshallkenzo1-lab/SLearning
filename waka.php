@@ -855,6 +855,7 @@ tr:hover td { background: #fcfdfc; }
               <select id="cariJurusan" class="search-select" onchange="filterTabelMurid()">
                   <option value="">Semua Jurusan</option>
                   <option value="Rekayasa Perangkat Lunak">Rekayasa Perangkat Lunak</option>
+                  <option value="Teknik Komputer dan Jaringan ">Teknik Komputer dan Jaringan </option>
                   <option value="Teknik Instalasi Tenaga Listrik">Teknik Instalasi Tenaga Listrik</option>
                   <option value="Teknik Jaringan Komputer dan Telekomunikasi">Teknik Jaringan Komputer dan Telekomunikasi</option>
                   <option value="Desain Komunikasi Visual">Desain Komunikasi Visual</option>
